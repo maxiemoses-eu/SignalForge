@@ -25,7 +25,8 @@ This project is designed not only to sell products, but to **generate high-fidel
 │  User Service     (Python)    │
 │  Prosuct Service  (Node.js)   │
 │  Order Service    (Java)      │
-│  Payment Service  (Go)        │
+│  Payment Service  (Go) 
+       │
 └───────────────────────────────┘
 ```
 
