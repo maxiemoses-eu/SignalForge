@@ -3,9 +3,10 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o app
+# Build static binary for scratch
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 FROM scratch
-COPY --from=build /app/app /app
+COPY --from=build /app/main /main
 EXPOSE 5003
-ENTRYPOINT ["/app"]
+ENTRYPOINT ["/main"]
