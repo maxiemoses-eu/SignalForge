@@ -13,87 +13,96 @@ require('dotenv').config();
 
 const app = express();
 
-// Set port to 9999 to avoid conflicts with DevOps tools
+// --- CONFIG ---
 const PORT = process.env.PORT || 9999;
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || '*';
 
-// --- 1. SECURITY AS CODE MIDDLEWARE ---
+// --- 1. SECURITY AS CODE ---
 
-// Helmet sets secure HTTP headers to pass Trivy/OWASP checks
+// Secure HTTP headers (OWASP / Trivy friendly)
 app.use(helmet());
 
-// CORS configuration - Allow your store-ui to communicate
+// CORS (UI → Gateway)
 app.use(cors({
-    origin: process.env.ALLOWED_ORIGINS || '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  origin: ALLOWED_ORIGINS,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true,
 }));
 
-// Rate Limiting to prevent brute-force and DDoS
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per window
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: "SignalForge Security: Too many requests from this IP."
+// Rate limiting ONLY for API traffic (not health checks)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'SignalForge Security: Too many requests'
+  }
 });
-app.use(limiter);
 
-// --- 2. HEALTH CHECK (For Jenkins & Kubernetes) ---
+app.use('/api', apiLimiter);
+
+// --- 2. HEALTH CHECK (K8s / Jenkins / ArgoCD) ---
 
 app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'UP',
-        project: 'SignalForge',
-        timestamp: new Date().toISOString()
-    });
+  res.status(200).json({
+    status: 'UP',
+    service: 'signalforge-gateway',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// --- 3. PROXY CONFIGURATION (Routing Logic) ---
+// --- 3. PROXY BASE OPTIONS ---
 
-// Common options for all microservices
 const proxyOptions = {
-    changeOrigin: true,
-    onProxyReq: (proxyReq, req, res) => {
-        // Tag requests so microservices know they came through the secure gateway
-        proxyReq.setHeader('X-SignalForge-Gateway', 'true');
-    },
-    onError: (err, req, res) => {
-        console.error('[Gateway Error]:', err.message);
-        res.status(502).json({ error: 'Service temporarily unavailable through SignalForge Gateway' });
-    }
+  changeOrigin: true,
+  xfwd: true,
+  onProxyReq: (proxyReq) => {
+    proxyReq.setHeader('X-SignalForge-Gateway', 'true');
+  },
+  onError: (err, req, res) => {
+    console.error('[Gateway Error]', err.message);
+    res.status(502).json({
+      error: 'Service unavailable via SignalForge Gateway'
+    });
+  }
 };
 
-// Route: Orders
+// --- 4. SERVICE ROUTES ---
+
+// Orders Service
 app.use('/api/orders', createProxyMiddleware({
-    ...proxyOptions,
-    target: process.env.ORDER_SERVICE_URL || 'http://order-microservice:3001',
-    pathRewrite: { '^/api/orders': '' }, 
+  ...proxyOptions,
+  target: process.env.ORDER_SERVICE_URL || 'http://order-service:3001',
+  pathRewrite: { '^/api/orders': '' }
 }));
 
-// Route: Products
+// Products Service
 app.use('/api/products', createProxyMiddleware({
-    ...proxyOptions,
-    target: process.env.PRODUCT_SERVICE_URL || 'http://product-microservice:3002',
-    pathRewrite: { '^/api/products': '' },
+  ...proxyOptions,
+  target: process.env.PRODUCT_SERVICE_URL || 'http://product-service:3002',
+  pathRewrite: { '^/api/products': '' }
 }));
 
-// Route: Payments
+// Payments Service
 app.use('/api/payments', createProxyMiddleware({
-    ...proxyOptions,
-    target: process.env.PAYMENT_SERVICE_URL || 'http://payment-microservice:3003',
-    pathRewrite: { '^/api/payments': '' },
+  ...proxyOptions,
+  target: process.env.PAYMENT_SERVICE_URL || 'http://payment-service:3003',
+  pathRewrite: { '^/api/payments': '' }
 }));
 
-// --- 4. SERVER START ---
+// --- 5. SERVER START ---
 
 app.listen(PORT, () => {
-    console.log(`
-    🚀 SignalForge Secure Gateway Active
-    -----------------------------------
-    Port:    ${PORT}
-    Status:  Ready for Jenkins/Trivy Scan
-    -----------------------------------
-    `);
+  console.log(`
+🚀 SignalForge Gateway is running
+--------------------------------
+Port:   ${PORT}
+Health: /health
+APIs:   /api/*
+--------------------------------
+`);
 });
 
-// Export for Security Unit Tests
+// Export for tests
 module.exports = app;
