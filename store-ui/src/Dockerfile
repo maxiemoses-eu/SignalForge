@@ -1,21 +1,15 @@
-FROM node:20-alpine AS build
+# ... (use previous stages)
+FROM node:20-alpine
+RUN addgroup -S signalforge && adduser -S forgeuser -G signalforge
 WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY src ./src
+COPY package.json .
 
-COPY package*.json .
-RUN npm ci
+RUN chown -R forgeuser:signalforge /app
+USER forgeuser
 
-COPY . .
-RUN npm run build
+# MATCH THE NEW PORT
+EXPOSE 9999
 
-FROM nginx:1.25-alpine
-RUN adduser -S app
-COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/build /usr/share/nginx/html
-
-RUN chown -R app /usr/share/nginx/html /var/cache/nginx
-USER app
-
-EXPOSE 8080
-HEALTHCHECK CMD wget -qO- http://localhost:8080 || exit 1
-
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["node", "src/index.js"]
