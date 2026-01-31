@@ -1,27 +1,17 @@
-# Stage 1: Build
-FROM node:20-alpine AS builder
+# Use a specific, small, and patched version of Node
+FROM node:22-alpine3.21 AS builder
 WORKDIR /app
 COPY package*.json ./
-# Use 'npm ci' for clean, reproducible builds in Jenkins
-RUN npm ci --only=production
+# npm ci is more secure and faster for Jenkins
+RUN npm ci 
+COPY . .
 
-# Stage 2: Production
-FROM node:20-alpine
-# Create non-privileged user for Security-as-Code compliance
-RUN addgroup -S streamline && adduser -S payuser -G streamline
+FROM node:22-alpine3.21
 WORKDIR /app
-
-# Copy only production artifacts
-COPY --from=builder /app/node_modules ./node_modules
-COPY src ./src
-COPY package.json .
-
-# Set ownership to the non-root user
-RUN chown -R payuser:streamline /app
-USER payuser
-
+# Patch OS-level vulnerabilities discovered by Trivy
+RUN apk update && apk upgrade --no-cache
+COPY --from=builder /app .
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s \
-  CMD wget --quiet --tries=1 --spider http://localhost:8080/health || exit 1
-
-CMD ["node", "src/index.js"]
+# Run as non-root user (Standard security requirement)
+USER node
+CMD ["npm", "start"]
