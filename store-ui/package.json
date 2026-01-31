@@ -1,13 +1,8 @@
-{
-  "name": "signalforge-store-ui",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "build": "echo 'Building secure frontend...'",
-    "test": "echo 'No tests specified'"
-  },
-  "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  }
+"scripts": {
+  "test": "jest --env=jsdom"
+},
+"devDependencies": {
+  "@testing-library/react": "^13.0.0",
+  "@testing-library/jest-dom": "^5.16.0",
+  "jest": "^27.0.0"
 }
