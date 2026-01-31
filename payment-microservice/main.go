@@ -1,25 +1,21 @@
 package main
 
 import (
-    "net/http"
     "github.com/gin-gonic/gin"
+    "github.com/sirupsen/logrus"
 )
 
-func setupRouter() *gin.Engine {
-    r := gin.Default()
-    r.POST("/pay", func(c *gin.Context) {
-        var body struct {
-            Amount int `json:"amount"`
-        }
-        if err := c.BindJSON(&body); err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": "invalid"})
-            return
-        }
-        c.JSON(http.StatusOK, gin.H{"status": "success", "amount": body.Amount})
-    })
-    return r
-}
-
 func main() {
-    setupRouter().Run(":5003")
+    log := logrus.New()
+    log.Formatter = &logrus.JSONFormatter{} // Best for Jenkins/Cloud logs
+
+    r := gin.New()
+    r.Use(gin.Recovery()) // Prevent crashes from taking down the service
+
+    r.GET("/health", func(c *gin.Context) {
+        log.Info("Health check triggered for SignalForge")
+        c.JSON(200, gin.H{"status": "secure"})
+    })
+
+    r.Run(":8080")
 }
