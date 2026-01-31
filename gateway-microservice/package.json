@@ -2,10 +2,6 @@
   "name": "signalforge-gateway",
   "version": "1.0.0",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "test": "jest"
-  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
@@ -16,5 +12,9 @@
   "devDependencies": {
     "jest": "^29.7.0",
     "supertest": "^7.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "jest"
   }
 }

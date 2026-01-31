@@ -1,14 +1,11 @@
 {
   "name": "signalforge-store-ui",
   "version": "1.0.0",
-  "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "jest --env=jsdom --watchAll=false"
-  },
+  "private": true,
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-scripts": "5.0.1"
   },
   "devDependencies": {
     "@babel/core": "^7.26.7",
@@ -19,6 +16,12 @@
     "jest-environment-jsdom": "^29.7.0",
     "@testing-library/react": "^16.2.0",
     "@testing-library/jest-dom": "^6.6.3"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "jest --watchAll=false",
+    "eject": "react-scripts eject"
   },
   "jest": {
     "testEnvironment": "jsdom",
