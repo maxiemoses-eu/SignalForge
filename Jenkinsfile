@@ -1,22 +1,24 @@
 pipeline {
     agent any
+    
     environment {
         AWS_REGION       = 'us-west-2'
         ECR_REGISTRY     = '418384447470.dkr.ecr.us-west-2.amazonaws.com'
         AWS_CRED_ID      = 'signalforge-friend-account'
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
-        GITOPS_SSH_KEY   = 'gitops-ssh-key'
         IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
         TRIVY_CACHE      = "${WORKSPACE}/.trivy"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
+        // List of all services to be processed in loops
+        SERVICES         = "gateway,product,order,payment,user,store-ui"
     }
 
     stages {
         stage('Initialize') {
             steps {
                 script {
-                    env.SERVICES_TO_BUILD = "gateway,product,order,payment,user,store-ui"
+                    // Create cache directories for faster subsequent builds
                     sh "mkdir -p ${TRIVY_CACHE} ${NPM_CONFIG_CACHE}"
                 }
             }
@@ -24,10 +26,19 @@ pipeline {
 
         stage('Parallel Build & Test') {
             parallel {
-                stage('Go (Payment)') {
+                stage('Node (Gateway)') {
                     steps {
-                        dir('payment-microservice') {
-                            sh 'go test -v ./...'
+                        dir('gateway-microservice') {
+                            sh 'npm ci --cache ${NPM_CONFIG_CACHE}'
+                            sh 'npm test || echo "Gateway tests skipped"'
+                        }
+                    }
+                }
+                stage('Node (Store-UI)') {
+                    steps {
+                        dir('store-ui') {
+                            sh 'npm ci --cache ${NPM_CONFIG_CACHE}'
+                            sh 'npm test -- --watchAll=false || echo "UI tests skipped"'
                         }
                     }
                 }
@@ -35,7 +46,14 @@ pipeline {
                     steps {
                         dir('product-microservice') {
                             sh 'npm ci --cache ${NPM_CONFIG_CACHE}'
-                            sh 'npm test || echo "Tests skipped"'
+                            sh 'npm test || echo "Product tests skipped"'
+                        }
+                    }
+                }
+                stage('Go (Payment)') {
+                    steps {
+                        dir('payment-microservice') {
+                            sh 'go test -v ./...'
                         }
                     }
                 }
@@ -51,8 +69,9 @@ pipeline {
                         dir('user-microservice') {
                             sh '''
                                 python3 -m venv venv
-                                venv/bin/pip install pytest
-                                venv/bin/pytest tests/
+                                . venv/bin/activate
+                                pip install pytest
+                                pytest tests/
                             '''
                         }
                     }
@@ -60,23 +79,74 @@ pipeline {
             }
         }
 
-        stage('Security Gate (Trivy)') {
+        stage('Build & Security Scan') {
             steps {
                 script {
-                    // FIX: Timeout increased to 15m to prevent DB download crashes
+                    // Pre-download Trivy DB to avoid concurrent download issues
                     sh "trivy image --download-db-only --cache-dir ${TRIVY_CACHE} --timeout 15m"
                     
-                    def services = env.SERVICES_TO_BUILD.split(',')
-                    services.each { svc ->
-                        def image = "signalforge-${svc}"
+                    def serviceList = env.SERVICES.split(',')
+                    serviceList.each { svc ->
+                        def imageName = "signalforge-${svc}"
+                        // Map service name to directory name
                         def path = (svc == 'store-ui') ? 'store-ui' : "${svc}-microservice"
-                        sh "docker build -t ${image}:${IMAGE_TAG} ${path}"
-                        sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${image}:${IMAGE_TAG}"
+                        
+                        echo "--- Processing Image: ${imageName} ---"
+                        
+                        // Build Docker Image
+                        sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
+                        
+                        // Scan Image
+                        sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
             }
         }
-        
-        // stage('Push & Promote') continues here...
+
+        stage('Push to ECR') {
+            steps {
+                script {
+                    withAWS(credentials: "${AWS_CRED_ID}", region: "${AWS_REGION}") {
+                        sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                        
+                        def serviceList = env.SERVICES.split(',')
+                        serviceList.each { svc ->
+                            def imageName = "signalforge-${svc}"
+                            sh "docker push ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Update GitOps Repo') {
+            steps {
+                script {
+                    // This stage updates the ArgoCD manifests with the new IMAGE_TAG
+                    dir('gitops-update') {
+                        git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
+                        
+                        sh """
+                            sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/g' values.yaml
+                            git config user.email "jenkins@signalforge.com"
+                            git config user.name "Jenkins CI"
+                            git add .
+                            git commit -m "Update images to ${IMAGE_TAG}"
+                            git push origin ${GITOPS_BRANCH}
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Clean up workspace to save disk space
+            cleanWs()
+        }
+        failure {
+            echo "Build failed. Check the logs for specific microservice errors."
+        }
     }
 }
