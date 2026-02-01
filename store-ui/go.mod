@@ -1,3 +1,0 @@
-module signalforge/payment
-
-go 1.22.2
