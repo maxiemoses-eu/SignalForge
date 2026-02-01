@@ -1,0 +1,34 @@
+# Node.js
+node_modules/
+dist/
+build/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+*.egg-info/
+
+# Java
+target/
+*.class
+
+# Go
+bin/
+*.exe
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
