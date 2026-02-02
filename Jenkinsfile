@@ -31,13 +31,19 @@ pipeline {
                     }
                 }
 
-                // --- STORE-UI HYBRID START ---
+                // --- STORE-UI HYBRID FIX ---
                 stage('Store-UI Frontend (Node)') {
                     steps {
                         dir('store-ui') {
-                            // Only run if package.json exists
-                            sh "npm ci --cache ${NPM_CONFIG_CACHE}"
-                            sh "npm test -- --watchAll=false"
+                            sh """
+                                # Check if lockfile exists; use 'ci' if it does, 'install' if it doesn't
+                                if [ -f package-lock.json ]; then
+                                    npm ci --cache ${NPM_CONFIG_CACHE}
+                                else
+                                    npm install --cache ${NPM_CONFIG_CACHE}
+                                fi
+                                npm test -- --watchAll=false
+                            """
                         }
                     }
                 }
@@ -49,14 +55,14 @@ pipeline {
                                 python3 -m venv venv
                                 . venv/bin/activate
                                 pip install --upgrade pip
-                                pip install pytest  # Ensures pytest is available
+                                pip install pytest
                                 pip install -r requirements.txt
                                 python3 -m pytest tests/test_ui.py
                             """
                         }
                     }
                 }
-                // --- STORE-UI HYBRID END ---
+                // --- END STORE-UI HYBRID FIX ---
 
                 stage('Node (Product)') {
                     steps {
@@ -113,8 +119,7 @@ pipeline {
                         echo "--- Processing Image: ${imageName} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
                         
-                        // Clean Groovy comments - No # characters allowed here
-                        // Verifying patched Gunicorn 23.0.0
+                        // Using Groovy comments (//) to prevent syntax errors
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
