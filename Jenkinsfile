@@ -10,7 +10,7 @@ pipeline {
         IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
         TRIVY_CACHE      = "${WORKSPACE}/.trivy"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
-        // List of all services to be processed in loops
+        // SERVICES list remains the same, store-ui directory mapping is handled in the build stage
         SERVICES         = "gateway,product,order,payment,user,store-ui"
     }
 
@@ -18,7 +18,6 @@ pipeline {
         stage('Initialize') {
             steps {
                 script {
-                    // Create cache directories for faster subsequent builds
                     sh "mkdir -p ${TRIVY_CACHE} ${NPM_CONFIG_CACHE}"
                 }
             }
@@ -34,11 +33,18 @@ pipeline {
                         }
                     }
                 }
-                stage('Node (Store-UI)') {
+                // FIXED: store-ui is now processed as a Python service
+                stage('Python (Store-UI)') {
                     steps {
                         dir('store-ui') {
-                            sh 'npm ci --cache ${NPM_CONFIG_CACHE}'
-                            sh 'npm test -- --watchAll=false || echo "UI tests skipped"'
+                            sh '''
+                                python3 -m venv venv
+                                . venv/bin/activate
+                                pip install --upgrade pip
+                                # Install requirements if file exists, otherwise just pytest
+                                [ -f requirements.txt ] && pip install -r requirements.txt || pip install pytest
+                                pytest tests/ || echo "UI tests skipped"
+                            '''
                         }
                     }
                 }
@@ -70,7 +76,8 @@ pipeline {
                             sh '''
                                 python3 -m venv venv
                                 . venv/bin/activate
-                                pip install pytest
+                                pip install --upgrade pip
+                                [ -f requirements.txt ] && pip install -r requirements.txt || pip install pytest
                                 pytest tests/
                             '''
                         }
@@ -82,21 +89,18 @@ pipeline {
         stage('Build & Security Scan') {
             steps {
                 script {
-                    // Pre-download Trivy DB to avoid concurrent download issues
                     sh "trivy image --download-db-only --cache-dir ${TRIVY_CACHE} --timeout 15m"
                     
                     def serviceList = env.SERVICES.split(',')
                     serviceList.each { svc ->
                         def imageName = "signalforge-${svc}"
-                        // Map service name to directory name
                         def path = (svc == 'store-ui') ? 'store-ui' : "${svc}-microservice"
                         
                         echo "--- Processing Image: ${imageName} ---"
                         
-                        // Build Docker Image
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
                         
-                        // Scan Image
+                        // Exit code 1 ensures pipeline fails if HIGH/CRITICAL vulnerabilities are found
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
@@ -122,16 +126,16 @@ pipeline {
         stage('Update GitOps Repo') {
             steps {
                 script {
-                    // This stage updates the ArgoCD manifests with the new IMAGE_TAG
                     dir('gitops-update') {
                         git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
                         
                         sh """
+                            # Replace the tag in the YAML configuration
                             sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/g' values.yaml
                             git config user.email "jenkins@signalforge.com"
                             git config user.name "Jenkins CI"
                             git add .
-                            git commit -m "Update images to ${IMAGE_TAG}"
+                            git commit -m "Update images to ${IMAGE_TAG}" || echo "No changes to commit"
                             git push origin ${GITOPS_BRANCH}
                         """
                     }
@@ -142,7 +146,6 @@ pipeline {
 
     post {
         always {
-            // Clean up workspace to save disk space
             cleanWs()
         }
         failure {
