@@ -80,7 +80,6 @@ pipeline {
                                 pip install --upgrade pip
                                 pip install pytest
                                 pip install -r requirements.txt
-                                # Verified passing in logs:
                                 python3 -m pytest tests/test_ui.py
                             """
                         }
@@ -101,8 +100,7 @@ pipeline {
 
                         echo "--- Processing Image: ${imageName} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
-                        
-                        // Corrected: Groovy comments (//) for the script block
+                        // Security scan with exit-code 1 for high/critical vulnerabilities
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
