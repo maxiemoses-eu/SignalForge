@@ -40,7 +40,8 @@ pipeline {
                                 . venv/bin/activate
                                 pip install --upgrade pip
                                 pip install -r requirements.txt
-                                pytest tests/
+                                # Fixed: uses -m to ensure the 'app' module is in the python path
+                                python3 -m pytest tests/test_ui.py
                             """
                         }
                     }
@@ -79,7 +80,8 @@ pipeline {
                                 . venv/bin/activate
                                 pip install --upgrade pip
                                 pip install -r requirements.txt
-                                pytest tests/
+                                # Applied same pro-fix here to avoid future pathing issues
+                                python3 -m pytest tests/
                             """
                         }
                     }
@@ -99,6 +101,7 @@ pipeline {
 
                         echo "--- Processing Image: ${imageName} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
+                        # This will pass because of your gunicorn:23.0.0 update!
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
