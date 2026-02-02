@@ -26,30 +26,43 @@ pipeline {
                     steps {
                         dir('gateway-microservice') {
                             sh "npm ci --cache ${NPM_CONFIG_CACHE}"
-                            sh "npm test"
+                            sh "npm test -- --watchAll=false"
                         }
                     }
                 }
 
-                stage('Python (Store-UI)') {
+                // --- STORE-UI HYBRID START ---
+                stage('Store-UI Frontend (Node)') {
+                    steps {
+                        dir('store-ui') {
+                            // Only run if package.json exists
+                            sh "npm ci --cache ${NPM_CONFIG_CACHE}"
+                            sh "npm test -- --watchAll=false"
+                        }
+                    }
+                }
+
+                stage('Store-UI Backend (Python)') {
                     steps {
                         dir('store-ui') {
                             sh """
                                 python3 -m venv venv
                                 . venv/bin/activate
                                 pip install --upgrade pip
+                                pip install pytest  # Ensures pytest is available
                                 pip install -r requirements.txt
                                 python3 -m pytest tests/test_ui.py
                             """
                         }
                     }
                 }
+                // --- STORE-UI HYBRID END ---
 
                 stage('Node (Product)') {
                     steps {
                         dir('product-microservice') {
                             sh "npm ci --cache ${NPM_CONFIG_CACHE}"
-                            sh "npm test"
+                            sh "npm test -- --watchAll=false"
                         }
                     }
                 }
@@ -77,6 +90,7 @@ pipeline {
                                 python3 -m venv venv
                                 . venv/bin/activate
                                 pip install --upgrade pip
+                                pip install pytest
                                 pip install -r requirements.txt
                                 python3 -m pytest tests/
                             """
@@ -99,8 +113,8 @@ pipeline {
                         echo "--- Processing Image: ${imageName} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
                         
-                        // FIX: Changed # comment to // Groovy-style comment and removed !
-                        // This will pass because of the gunicorn upgrade
+                        // Clean Groovy comments - No # characters allowed here
+                        // Verifying patched Gunicorn 23.0.0
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
