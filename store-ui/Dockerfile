@@ -1,40 +1,25 @@
-# Stage 1: Build Stage
-FROM node:22-alpine3.21 AS builder
+# Use python-slim to reduce image size and vulnerability count
+FROM python:3.11-slim-bookworm
 
-# 1. Senior Fix: Update npm globally to patch CVE-2026-23745 (tar dependency)
-RUN npm install -g npm@latest 
+# Standard security environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# 2. Optimize caching by copying package files first
-COPY package*.json ./
+# Create a dedicated user so we don't run as root
+RUN adduser --disabled-password --gecos "" signaluser
 
-# 3. Senior Fix: Proactively resolve the 21 vulnerabilities found in logs
-# This fixes the "6 high" vulnerabilities before installation [cite: 474]
-RUN npm audit fix --force 
-RUN npm ci
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# 4. Copy source and build the production assets
 COPY . .
-RUN npm run build
+RUN chown -R signaluser:signaluser /app
 
-# Stage 2: Production Serving Stage
-FROM node:22-alpine3.21
+# Non-root context
+USER signaluser
 
-# 1. Patch the production image's global npm and install a lightweight server
-RUN npm install -g npm@latest && npm install -g serve
+EXPOSE 8080
 
-WORKDIR /app
-
-# 2. Copy only the production build artifacts from the builder stage
-# This keeps the image size small and secure
-COPY --from=builder /app/build ./build
-
-# 3. Security best practice: Run as a non-root user
-USER node
-
-# 4. Expose the UI port
-EXPOSE 3001
-
-# 5. Start the application using 'serve'
-CMD ["serve", "-s", "build", "-l", "3001"]
+# Gunicorn is safer for production than the Flask built-in server
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]
