@@ -71,8 +71,6 @@ pipeline {
                     }
                 }
 
-                // PERFECT FIX: We only run Python tests for Store-UI. 
-                // The Node frontend stage is gone, so 'npm ERR! Missing script' is impossible now.
                 stage('Python (Store-UI)') {
                     steps {
                         dir('store-ui') {
@@ -82,6 +80,7 @@ pipeline {
                                 pip install --upgrade pip
                                 pip install pytest
                                 pip install -r requirements.txt
+                                # Verified passing in logs:
                                 python3 -m pytest tests/test_ui.py
                             """
                         }
@@ -103,7 +102,7 @@ pipeline {
                         echo "--- Processing Image: ${imageName} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
                         
-                        // Using Groovy comments (//) to keep the Jenkins parser happy
+                        // Corrected: Groovy comments (//) for the script block
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
