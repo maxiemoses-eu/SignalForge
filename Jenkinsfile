@@ -7,16 +7,22 @@ pipeline {
         AWS_CRED_ID      = 'signalforge-friend-account'
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
-        IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
+        
+        // --- NEW SEMANTIC VERSIONING LOGIC ---
+        // Reads "1.1" from file and results in "v1.1.0", "v1.1.1", etc.
+        BASE_VERSION     = readFile('VERSION').trim()
+        IMAGE_TAG        = "v${BASE_VERSION}.${env.BUILD_NUMBER}"
+        
         TRIVY_CACHE      = "${WORKSPACE}/.trivy"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
-        SERVICES         = "gateway,product,order,payment,user,store-ui"
+        SERVICES         = "api-gateway,order-microservice,payment-service,product-service"
     }
 
     stages {
         stage('Initialize') {
             steps {
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CONFIG_CACHE}"
+                echo "Building SignalForge version: ${IMAGE_TAG}"
             }
         }
 
@@ -30,7 +36,6 @@ pipeline {
                         }
                     }
                 }
-
                 stage('Node (Product)') {
                     steps {
                         dir('product-microservice') {
@@ -39,7 +44,6 @@ pipeline {
                         }
                     }
                 }
-
                 stage('Go (Payment)') {
                     steps {
                         dir('payment-microservice') {
@@ -47,7 +51,6 @@ pipeline {
                         }
                     }
                 }
-
                 stage('Java (Order)') {
                     steps {
                         dir('order-microservice') {
@@ -55,52 +58,30 @@ pipeline {
                         }
                     }
                 }
-
-                stage('Python (User)') {
-                    steps {
-                        dir('user-microservice') {
-                            sh """
-                                python3 -m venv venv
-                                . venv/bin/activate
-                                pip install --upgrade pip
-                                pip install pytest
-                                pip install -r requirements.txt
-                                python3 -m pytest tests/
-                            """
-                        }
-                    }
-                }
-
-                stage('Python (Store-UI)') {
-                    steps {
-                        dir('store-ui') {
-                            sh """
-                                python3 -m venv venv
-                                . venv/bin/activate
-                                pip install --upgrade pip
-                                pip install pytest
-                                pip install -r requirements.txt
-                                python3 -m pytest tests/test_ui.py
-                            """
-                        }
-                    }
-                }
             }
         }
 
-        stage('Build & Security Scan') {
+        stage('DockerBuild & Security Scan') {
             steps {
                 script {
                     sh "trivy image --download-db-only --cache-dir ${TRIVY_CACHE} --timeout 15m"
 
                     def serviceList = env.SERVICES.split(',')
                     serviceList.each { svc ->
-                        def imageName = "signalforge-${svc}"
-                        def path = (svc == 'store-ui') ? 'store-ui' : "${svc}-microservice"
+                        def imageName = "signalforge-prod-${svc}"
+                        def folderMap = [
+                            'api-gateway': 'gateway-microservice',
+                            'product-microservice': 'product-microservice',
+                            'order-microservice': 'order-microservice',
+                            'payment-service': 'payment-microservice'
+                        ]
+                        def path = folderMap[svc]
 
-                        echo "--- Processing Image: ${imageName} ---"
+                        echo "--- Building: ${imageName}:${IMAGE_TAG} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
-                        // Security scan with exit-code 1 for high/critical vulnerabilities
+                        // Also tag as latest for testing convenience
+                        sh "docker tag ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ${ECR_REGISTRY}/${imageName}:latest"
+                        
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
@@ -111,10 +92,13 @@ pipeline {
             steps {
                 script {
                     withAWS(credentials: "${AWS_CRED_ID}", region: "${AWS_REGION}") {
-                        sh "aws ecr get-login-password | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                        sh "aws ecr get-login-password --region ${env.AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
 
                         env.SERVICES.split(',').each { svc ->
-                            sh "docker push ${ECR_REGISTRY}/signalforge-${svc}:${IMAGE_TAG}"
+                            def imageName = "signalforge-prod-${svc}"
+                            echo "Pushing version ${IMAGE_TAG} to ECR..."
+                            sh "docker push ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
+                            sh "docker push ${ECR_REGISTRY}/${imageName}:latest"
                         }
                     }
                 }
@@ -125,13 +109,13 @@ pipeline {
             steps {
                 dir('gitops-update') {
                     git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
-
+                    // Replaces old tags with the new v1.1.x format
                     sh """
                         sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/g' values.yaml
                         git config user.email "jenkins@signalforge.com"
                         git config user.name "Jenkins CI"
                         git add .
-                        git commit -m "Update images to ${IMAGE_TAG}" || true
+                        git commit -m "Update SignalForge images to ${IMAGE_TAG}" || true
                         git push origin ${GITOPS_BRANCH}
                     """
                 }
@@ -142,9 +126,6 @@ pipeline {
     post {
         always {
             cleanWs()
-        }
-        failure {
-            echo "Build failed — check logs for the failing service."
         }
     }
 }
