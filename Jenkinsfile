@@ -9,9 +9,7 @@ pipeline {
         GITOPS_BRANCH    = 'main'
         
         // --- NEW SEMANTIC VERSIONING LOGIC ---
-        // Reads "1.1" from file and results in "v1.1.0", "v1.1.1", etc.
-        BASE_VERSION     = readFile('VERSION').trim()
-        IMAGE_TAG        = "v${BASE_VERSION}.${env.BUILD_NUMBER}"
+        IMAGE_TAG        = sh(script: "git describe --tags --always", returnStdout: true).trim()
         
         TRIVY_CACHE      = "${WORKSPACE}/.trivy"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
@@ -79,7 +77,6 @@ pipeline {
 
                         echo "--- Building: ${imageName}:${IMAGE_TAG} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
-                        // Also tag as latest for testing convenience
                         sh "docker tag ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ${ECR_REGISTRY}/${imageName}:latest"
                         
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
@@ -109,7 +106,6 @@ pipeline {
             steps {
                 dir('gitops-update') {
                     git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
-                    // Replaces old tags with the new v1.1.x format
                     sh """
                         sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/g' values.yaml
                         git config user.email "jenkins@signalforge.com"
