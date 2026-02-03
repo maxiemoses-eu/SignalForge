@@ -10,7 +10,8 @@ pipeline {
         IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
         TRIVY_CACHE      = "${WORKSPACE}/.trivy"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
-        SERVICES         = "gateway,product,order,payment,user,store-ui"
+        // Updated to match the exact ECR repository names in your screenshot
+        SERVICES         = "api-gateway,product-service,order-microservice,payment-service,users-service,store-ui"
     }
 
     stages {
@@ -24,7 +25,7 @@ pipeline {
             parallel {
                 stage('Node (Gateway)') {
                     steps {
-                        dir('gateway-microservice') {
+                        dir('api-gateway') {
                             sh "npm ci --cache ${NPM_CONFIG_CACHE}"
                             sh "npm test -- --watchAll=false"
                         }
@@ -58,7 +59,7 @@ pipeline {
 
                 stage('Python (User)') {
                     steps {
-                        dir('user-microservice') {
+                        dir('users-service') {
                             sh """
                                 python3 -m venv venv
                                 . venv/bin/activate
@@ -95,12 +96,17 @@ pipeline {
 
                     def serviceList = env.SERVICES.split(',')
                     serviceList.each { svc ->
-                        def imageName = "signalforge-${svc}"
-                        def path = (svc == 'store-ui') ? 'store-ui' : "${svc}-microservice"
+                        // Added 'prod-' prefix to match your ECR screenshot
+                        def imageName = "signalforge-prod-${svc}"
+                        
+                        // Logic to find the correct directory for each service
+                        def path = svc
+                        if (svc == 'api-gateway') path = 'api-gateway'
+                        else if (svc == 'users-service') path = 'users-service'
+                        else if (svc != 'store-ui' && !svc.contains('microservice')) path = "${svc}-microservice"
 
                         echo "--- Processing Image: ${imageName} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
-                        // Security scan with exit-code 1 for high/critical vulnerabilities
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
@@ -114,7 +120,8 @@ pipeline {
                         sh "aws ecr get-login-password | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
 
                         env.SERVICES.split(',').each { svc ->
-                            sh "docker push ${ECR_REGISTRY}/signalforge-${svc}:${IMAGE_TAG}"
+                            // Added 'prod-' prefix to match your ECR screenshot
+                            sh "docker push ${ECR_REGISTRY}/signalforge-prod-${svc}:${IMAGE_TAG}"
                         }
                     }
                 }
