@@ -7,15 +7,20 @@ pipeline {
         AWS_CRED_ID      = 'signalforge-friend-account'
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
+        // Generates a unique tag based on Git commit and Jenkins build number
         IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
         TRIVY_CACHE      = "${WORKSPACE}/.trivy"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
-        SERVICES         = "gateway,product,order,payment,user,store-ui"
+        
+        // Senior Setup: Map the ECR repo suffix to the actual Folder Name
+        // Format: "ECR_SUFFIX:FOLDER_NAME"
+        SERVICES_MAP     = "api-gateway:api-gateway,product-service:product-microservice,order-microservice:order-microservice,payment-service:payment-microservice,users-service:users-service,store-ui:store-ui"
     }
 
     stages {
         stage('Initialize') {
             steps {
+                echo "Cleaning workspace and initializing cache directories..."
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CONFIG_CACHE}"
             }
         }
@@ -24,13 +29,12 @@ pipeline {
             parallel {
                 stage('Node (Gateway)') {
                     steps {
-                        dir('gateway-microservice') {
+                        dir('api-gateway') {
                             sh "npm ci --cache ${NPM_CONFIG_CACHE}"
                             sh "npm test -- --watchAll=false"
                         }
                     }
                 }
-
                 stage('Node (Product)') {
                     steps {
                         dir('product-microservice') {
@@ -39,7 +43,6 @@ pipeline {
                         }
                     }
                 }
-
                 stage('Go (Payment)') {
                     steps {
                         dir('payment-microservice') {
@@ -47,7 +50,6 @@ pipeline {
                         }
                     }
                 }
-
                 stage('Java (Order)') {
                     steps {
                         dir('order-microservice') {
@@ -55,30 +57,24 @@ pipeline {
                         }
                     }
                 }
-
                 stage('Python (User)') {
                     steps {
-                        dir('user-microservice') {
+                        dir('users-service') {
                             sh """
                                 python3 -m venv venv
                                 . venv/bin/activate
-                                pip install --upgrade pip
-                                pip install pytest
                                 pip install -r requirements.txt
                                 python3 -m pytest tests/
                             """
                         }
                     }
                 }
-
                 stage('Python (Store-UI)') {
                     steps {
                         dir('store-ui') {
                             sh """
                                 python3 -m venv venv
                                 . venv/bin/activate
-                                pip install --upgrade pip
-                                pip install pytest
                                 pip install -r requirements.txt
                                 python3 -m pytest tests/test_ui.py
                             """
@@ -88,20 +84,26 @@ pipeline {
             }
         }
 
+        
+
         stage('Build & Security Scan') {
             steps {
                 script {
+                    // Pre-download Trivy DB to prevent multiple processes locking the same file
                     sh "trivy image --download-db-only --cache-dir ${TRIVY_CACHE} --timeout 15m"
 
-                    def serviceList = env.SERVICES.split(',')
-                    serviceList.each { svc ->
-                        def imageName = "signalforge-${svc}"
-                        def path = (svc == 'store-ui') ? 'store-ui' : "${svc}-microservice"
-
-                        echo "--- Processing Image: ${imageName} ---"
-                        sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
-                        // Security scan with exit-code 1 for high/critical vulnerabilities
-                        sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
+                    env.SERVICES_MAP.split(',').each { entry ->
+                        def pair = entry.split(':')
+                        def repoSuffix = pair[0]
+                        def dirName = pair[1]
+                        def fullImageName = "signalforge-prod-${repoSuffix}"
+                        
+                        echo "--- Building Docker Image: ${fullImageName} ---"
+                        sh "docker build -t ${ECR_REGISTRY}/${fullImageName}:${IMAGE_TAG} ./${dirName}"
+                        
+                        echo "--- Scanning Image: ${fullImageName} ---"
+                        // Fails the build if High or Critical vulnerabilities are found
+                        sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} ${ECR_REGISTRY}/${fullImageName}:${IMAGE_TAG}"
                     }
                 }
             }
@@ -113,25 +115,38 @@ pipeline {
                     withAWS(credentials: "${AWS_CRED_ID}", region: "${AWS_REGION}") {
                         sh "aws ecr get-login-password | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
 
-                        env.SERVICES.split(',').each { svc ->
-                            sh "docker push ${ECR_REGISTRY}/signalforge-${svc}:${IMAGE_TAG}"
+                        env.SERVICES_MAP.split(',').each { entry ->
+                            def repoSuffix = entry.split(':')[0]
+                            def fullImageName = "signalforge-prod-${repoSuffix}"
+                            sh "docker push ${ECR_REGISTRY}/${fullImageName}:${IMAGE_TAG}"
                         }
                     }
                 }
             }
         }
 
+        
+
         stage('Update GitOps Repo') {
             steps {
+                // Creates a temporary directory to clone the ArgoCD manifest repo
                 dir('gitops-update') {
                     git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
 
+                    script {
+                        env.SERVICES_MAP.split(',').each { entry ->
+                            def repoSuffix = entry.split(':')[0]
+                            echo "Updating GitOps tag for ${repoSuffix}..."
+                            // Uses range-based sed to only update the 'tag' line within the specific service block
+                            sh "sed -i '/${repoSuffix}:/,/tag:/ s/tag: .*/tag: \"${IMAGE_TAG}\"/' values.yaml"
+                        }
+                    }
+
                     sh """
-                        sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/g' values.yaml
                         git config user.email "jenkins@signalforge.com"
                         git config user.name "Jenkins CI"
-                        git add .
-                        git commit -m "Update images to ${IMAGE_TAG}" || true
+                        git add values.yaml
+                        git commit -m "chore: update images to ${IMAGE_TAG} [skip ci]" || true
                         git push origin ${GITOPS_BRANCH}
                     """
                 }
@@ -141,10 +156,10 @@ pipeline {
 
     post {
         always {
-            cleanWs()
+            cleanWs() // Keeps the Jenkins agent disk space clean
         }
         failure {
-            echo "Build failed — check logs for the failing service."
+            echo "SignalForge Pipeline Failed. Please check the logs for the specific microservice error."
         }
     }
 }
