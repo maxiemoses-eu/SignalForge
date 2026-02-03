@@ -8,9 +8,9 @@ pipeline {
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
         IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
-        TRIVY_CACHE      = "${WORKSPACE}/.trivy"
+        // SENIOR FIX: Use a persistent path outside the workspace
+        TRIVY_CACHE      = "/var/lib/jenkins/trivy-cache"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
-        // These are the suffixes for your ECR repos from the screenshot
         SERVICES         = "api-gateway,product-service,order-microservice,payment-service,users-service,store-ui"
     }
 
@@ -18,99 +18,43 @@ pipeline {
         stage('Initialize') {
             steps {
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CONFIG_CACHE}"
+                // Pre-download/Update DB once with a high timeout
+                echo "Updating Trivy Vulnerability Database..."
+                sh "trivy image --download-db-only --cache-dir ${TRIVY_CACHE} --timeout 15m"
             }
         }
 
         stage('Parallel Build & Test') {
             parallel {
-                stage('Node (Gateway)') {
-                    steps {
-                        dir('gateway-microservice') { // Kept your original folder path
-                            sh "npm ci --cache ${NPM_CONFIG_CACHE}"
-                            sh "npm test -- --watchAll=false"
-                        }
-                    }
-                }
-
-                stage('Node (Product)') {
-                    steps {
-                        dir('product-microservice') { // Kept your original folder path
-                            sh "npm ci --cache ${NPM_CONFIG_CACHE}"
-                            sh "npm test -- --watchAll=false"
-                        }
-                    }
-                }
-
-                stage('Go (Payment)') {
-                    steps {
-                        dir('payment-microservice') {
-                            sh "go test -v ./..."
-                        }
-                    }
-                }
-
-                stage('Java (Order)') {
-                    steps {
-                        dir('order-microservice') {
-                            sh "chmod +x mvnw && ./mvnw clean test"
-                        }
-                    }
-                }
-
-                stage('Python (User)') {
-                    steps {
-                        dir('user-microservice') { // Kept your original folder path
-                            sh """
-                                python3 -m venv venv
-                                . venv/bin/activate
-                                pip install --upgrade pip
-                                pip install pytest
-                                pip install -r requirements.txt
-                                python3 -m pytest tests/
-                            """
-                        }
-                    }
-                }
-
-                stage('Python (Store-UI)') {
-                    steps {
-                        dir('store-ui') {
-                            sh """
-                                python3 -m venv venv
-                                . venv/bin/activate
-                                pip install --upgrade pip
-                                pip install pytest
-                                pip install -r requirements.txt
-                                python3 -m pytest tests/test_ui.py
-                            """
-                        }
-                    }
-                }
+                stage('Node (Gateway)') { steps { dir('gateway-microservice') { sh "npm ci --cache ${NPM_CONFIG_CACHE} && npm test -- --watchAll=false" } } }
+                stage('Node (Product)') { steps { dir('product-microservice') { sh "npm ci --cache ${NPM_CONFIG_CACHE} && npm test -- --watchAll=false" } } }
+                stage('Go (Payment)') { steps { dir('payment-microservice') { sh "go test -v ./..." } } }
+                stage('Java (Order)') { steps { dir('order-microservice') { sh "chmod +x mvnw && ./mvnw clean test" } } }
+                stage('Python (User)') { steps { dir('user-microservice') { sh "python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt && python3 -m pytest tests/" } } }
+                stage('Python (Store-UI)') { steps { dir('store-ui') { sh "python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt && python3 -m pytest tests/test_ui.py" } } }
             }
         }
 
         stage('Build & Security Scan') {
             steps {
                 script {
-                    sh "trivy image --download-db-only --cache-dir ${TRIVY_CACHE} --timeout 15m"
-
                     def serviceList = env.SERVICES.split(',')
                     serviceList.each { svc ->
-                        // This matches the name in your AWS screenshot exactly
                         def imageName = "signalforge-prod-${svc}"
                         
-                        // Precise mapping of ECR Name -> Source Code Folder
-                        def path = ""
+                        // Map ECR name to correct folder path
+                        def path = svc
                         if (svc == 'api-gateway') path = 'gateway-microservice'
                         else if (svc == 'users-service') path = 'user-microservice'
                         else if (svc == 'product-service') path = 'product-microservice'
                         else if (svc == 'payment-service') path = 'payment-microservice'
                         else if (svc == 'order-microservice') path = 'order-microservice'
-                        else if (svc == 'store-ui') path = 'store-ui'
-
-                        echo "--- Building Image: ${imageName} from folder: ${path} ---"
+                        
+                        echo "--- Building & Scanning: ${imageName} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
-                        sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
+                        
+                        // SENIOR FIX: Use --skip-db-update to prevent timeout/locks in the loop
+                        sh "trivy image --skip-db-update --cache-dir ${TRIVY_CACHE} --exit-code 1 --severity HIGH,CRITICAL ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
             }
@@ -121,9 +65,7 @@ pipeline {
                 script {
                     withAWS(credentials: "${AWS_CRED_ID}", region: "${AWS_REGION}") {
                         sh "aws ecr get-login-password | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-
                         env.SERVICES.split(',').each { svc ->
-                            // Correct ECR repo name with 'prod-' prefix
                             sh "docker push ${ECR_REGISTRY}/signalforge-prod-${svc}:${IMAGE_TAG}"
                         }
                     }
@@ -135,13 +77,12 @@ pipeline {
             steps {
                 dir('gitops-update') {
                     git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
-
                     sh """
                         sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/g' values.yaml
                         git config user.email "jenkins@signalforge.com"
                         git config user.name "Jenkins CI"
                         git add .
-                        git commit -m "Update images to ${IMAGE_TAG}" || true
+                        git commit -m "chore: update images to ${IMAGE_TAG} [skip ci]" || true
                         git push origin ${GITOPS_BRANCH}
                     """
                 }
@@ -152,9 +93,6 @@ pipeline {
     post {
         always {
             cleanWs()
-        }
-        failure {
-            echo "Build failed — check logs for the failing service."
         }
     }
 }
