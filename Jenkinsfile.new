@@ -10,8 +10,7 @@ pipeline {
         IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
         TRIVY_CACHE      = "${WORKSPACE}/.trivy"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
-        // Corrected mapping: service name used in ECR
-        SERVICES         = "api-gateway,product-service,order-microservice,payment-service,users-service,store-ui"
+        SERVICES         = "gateway,product,order,payment,user,store-ui"
     }
 
     stages {
@@ -25,12 +24,13 @@ pipeline {
             parallel {
                 stage('Node (Gateway)') {
                     steps {
-                        dir('api-gateway') {
+                        dir('gateway-microservice') {
                             sh "npm ci --cache ${NPM_CONFIG_CACHE}"
                             sh "npm test -- --watchAll=false"
                         }
                     }
                 }
+
                 stage('Node (Product)') {
                     steps {
                         dir('product-microservice') {
@@ -39,6 +39,7 @@ pipeline {
                         }
                     }
                 }
+
                 stage('Go (Payment)') {
                     steps {
                         dir('payment-microservice') {
@@ -46,6 +47,7 @@ pipeline {
                         }
                     }
                 }
+
                 stage('Java (Order)') {
                     steps {
                         dir('order-microservice') {
@@ -53,9 +55,10 @@ pipeline {
                         }
                     }
                 }
+
                 stage('Python (User)') {
                     steps {
-                        dir('users-service') {
+                        dir('user-microservice') {
                             sh """
                                 python3 -m venv venv
                                 . venv/bin/activate
@@ -67,6 +70,7 @@ pipeline {
                         }
                     }
                 }
+
                 stage('Python (Store-UI)') {
                     steps {
                         dir('store-ui') {
@@ -91,17 +95,12 @@ pipeline {
 
                     def serviceList = env.SERVICES.split(',')
                     serviceList.each { svc ->
-                        // Match AWS ECR: signalforge-prod-<service>
-                        def imageName = "signalforge-prod-${svc}"
-                        
-                        // Map the service name to the actual directory name
-                        def path = svc
-                        if (svc == 'api-gateway') path = 'api-gateway'
-                        else if (svc == 'users-service') path = 'users-service'
-                        else if (svc != 'store-ui' && !svc.contains('microservice')) path = "${svc}-microservice"
+                        def imageName = "signalforge-${svc}"
+                        def path = (svc == 'store-ui') ? 'store-ui' : "${svc}-microservice"
 
-                        echo "--- Processing Image: ${imageName} from path: ./${path} ---"
+                        echo "--- Processing Image: ${imageName} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
+                        // Security scan with exit-code 1 for high/critical vulnerabilities
                         sh "trivy image --exit-code 1 --severity HIGH,CRITICAL --cache-dir ${TRIVY_CACHE} --timeout 15m ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
@@ -115,8 +114,7 @@ pipeline {
                         sh "aws ecr get-login-password | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
 
                         env.SERVICES.split(',').each { svc ->
-                            def imageName = "signalforge-prod-${svc}"
-                            sh "docker push ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
+                            sh "docker push ${ECR_REGISTRY}/signalforge-${svc}:${IMAGE_TAG}"
                         }
                     }
                 }
@@ -129,8 +127,6 @@ pipeline {
                     git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
 
                     sh """
-                        # Note: This assumes your GitOps values.yaml handles multiple images. 
-                        # If you have one tag for all, this works.
                         sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/g' values.yaml
                         git config user.email "jenkins@signalforge.com"
                         git config user.name "Jenkins CI"
@@ -152,4 +148,3 @@ pipeline {
         }
     }
 }
-
