@@ -8,7 +8,7 @@ pipeline {
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
         IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
-        // SENIOR FIX: Use a persistent path outside the workspace
+        // SENIOR FIX: Persistent cache outside workspace
         TRIVY_CACHE      = "/var/lib/jenkins/trivy-cache"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
         SERVICES         = "api-gateway,product-service,order-microservice,payment-service,users-service,store-ui"
@@ -17,9 +17,10 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
+                // Ensure the persistent cache directory exists on the host
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CONFIG_CACHE}"
-                // Pre-download/Update DB once with a high timeout
-                echo "Updating Trivy Vulnerability Database..."
+                echo "Pre-warming Trivy DB..."
+                // Download once at the start to prevent parallel lock issues
                 sh "trivy image --download-db-only --cache-dir ${TRIVY_CACHE} --timeout 15m"
             }
         }
@@ -42,7 +43,7 @@ pipeline {
                     serviceList.each { svc ->
                         def imageName = "signalforge-prod-${svc}"
                         
-                        // Map ECR name to correct folder path
+                        // Map ECR name to correct source folder
                         def path = svc
                         if (svc == 'api-gateway') path = 'gateway-microservice'
                         else if (svc == 'users-service') path = 'user-microservice'
@@ -53,8 +54,9 @@ pipeline {
                         echo "--- Building & Scanning: ${imageName} ---"
                         sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
                         
-                        // SENIOR FIX: Use --skip-db-update to prevent timeout/locks in the loop
-                        sh "trivy image --skip-db-update --cache-dir ${TRIVY_CACHE} --exit-code 1 --severity HIGH,CRITICAL ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
+                        // SENIOR FIX: Use --skip-db-update to use the pre-warmed DB and save time
+                        // Generates JSON report for the 'post' archive stage
+                        sh "trivy image --skip-db-update --cache-dir ${TRIVY_CACHE} --format json --output trivy-${svc}.json --severity HIGH,CRITICAL ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
             }
@@ -77,11 +79,16 @@ pipeline {
             steps {
                 dir('gitops-update') {
                     git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
+                    // Block-aware sed to ensure only the specific service tag is updated
+                    script {
+                        env.SERVICES.split(',').each { svc ->
+                            sh "sed -i '/${svc}:/,/tag:/ s/tag: .*/tag: \"${IMAGE_TAG}\"/' values.yaml"
+                        }
+                    }
                     sh """
-                        sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/g' values.yaml
                         git config user.email "jenkins@signalforge.com"
                         git config user.name "Jenkins CI"
-                        git add .
+                        git add values.yaml
                         git commit -m "chore: update images to ${IMAGE_TAG} [skip ci]" || true
                         git push origin ${GITOPS_BRANCH}
                     """
@@ -92,7 +99,12 @@ pipeline {
 
     post {
         always {
+            // Archive the Trivy JSON reports for audit/compliance
+            archiveArtifacts artifacts: 'trivy-*.json', allowEmptyArchive: true
             cleanWs()
+        }
+        failure {
+            echo "SignalForge Pipeline Failed. Check ECR repo naming or Trivy scan results."
         }
     }
 }
