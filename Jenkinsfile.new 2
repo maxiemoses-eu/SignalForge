@@ -101,9 +101,6 @@ pipeline {
         always {
             // Archive the Trivy JSON reports for audit/compliance
             archiveArtifacts artifacts: 'trivy-*.json', allowEmptyArchive: true
-            // Cleanup block added
-            sh 'docker system prune -af || true'
-            sh 'docker volume prune -f || true'
             cleanWs()
         }
         failure {
