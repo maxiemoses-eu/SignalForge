@@ -1,6 +1,13 @@
 pipeline {
     agent any
     
+    options {
+        // Keeps stashes for the last 5 builds so restarts work perfectly
+        preserveStashes(buildCount: 5)
+        // Prevent concurrent builds from clashing on the same persistent host cache
+        disableConcurrentBuilds()
+    }
+    
     environment {
         AWS_REGION       = 'us-west-2'
         ECR_REGISTRY     = '418384447470.dkr.ecr.us-west-2.amazonaws.com'
@@ -8,55 +15,102 @@ pipeline {
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
         IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
-        // SENIOR FIX: Persistent cache outside workspace
-        TRIVY_CACHE      = "/var/lib/jenkins/trivy-cache"
-        NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
+        
+        // SENIOR FIX: Define absolute paths on the Jenkins HOST for persistence
+        HOST_CACHE_ROOT  = "/var/lib/jenkins/persistent_caches"
+        TRIVY_CACHE      = "${env.HOST_CACHE_ROOT}/trivy"
+        NPM_CACHE        = "${env.HOST_CACHE_ROOT}/npm"
+        PIP_CACHE        = "${env.HOST_CACHE_ROOT}/pip"
+        MAVEN_REPO       = "${env.HOST_CACHE_ROOT}/m2"
+        
         SERVICES         = "api-gateway,product-service,order-microservice,payment-service,users-service,store-ui"
     }
 
     stages {
-        stage('Initialize') {
+        stage('Initialize Caches') {
             steps {
-                // Ensure the persistent cache directory exists on the host
-                sh "mkdir -p ${TRIVY_CACHE} ${NPM_CONFIG_CACHE}"
-                echo "Pre-warming Trivy DB..."
-                // Download once at the start to prevent parallel lock issues
-                sh "trivy image --download-db-only --cache-dir ${TRIVY_CACHE} --timeout 15m"
+                sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE} ${MAVEN_REPO}"
+                script {
+                    // Only download Trivy DB if it's older than 24 hours (1440 min)
+                    sh """
+                        find ${TRIVY_CACHE} -name "trivy.db" -mmin +1440 | grep -q . && \
+                        trivy image --download-db-only --cache-dir ${TRIVY_CACHE} || \
+                        echo "Trivy DB is fresh or exists, skipping download."
+                    """
+                }
             }
         }
 
         stage('Parallel Build & Test') {
             parallel {
-                stage('Node (Gateway)') { steps { dir('gateway-microservice') { sh "npm ci --cache ${NPM_CONFIG_CACHE} && npm test -- --watchAll=false" } } }
-                stage('Node (Product)') { steps { dir('product-microservice') { sh "npm ci --cache ${NPM_CONFIG_CACHE} && npm test -- --watchAll=false" } } }
-                stage('Go (Payment)') { steps { dir('payment-microservice') { sh "go test -v ./..." } } }
-                stage('Java (Order)') { steps { dir('order-microservice') { sh "chmod +x mvnw && ./mvnw clean test" } } }
-                stage('Python (User)') { steps { dir('user-microservice') { sh "python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt && python3 -m pytest tests/" } } }
-                stage('Python (Store-UI)') { steps { dir('store-ui') { sh "python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt && python3 -m pytest tests/test_ui.py" } } }
+                stage('Node Services') {
+                    steps {
+                        dir('gateway-microservice') {
+                            sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
+                            sh "npm test -- --watchAll=false"
+                        }
+                        dir('product-microservice') {
+                            sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
+                            sh "npm test -- --watchAll=false"
+                        }
+                        // Stash the workspace so if "Build" fails, we don't re-run npm ci
+                        stash name: 'node-deps', includes: 'gateway-microservice/node_modules/**,product-microservice/node_modules/**', useDefaultExcludes: false
+                    }
+                }
+                stage('Go (Payment)') {
+                    steps {
+                        dir('payment-microservice') {
+                            sh "go test -v ./..."
+                        }
+                    }
+                }
+                stage('Java (Order)') {
+                    steps {
+                        dir('order-microservice') {
+                            sh "chmod +x mvnw && ./mvnw clean test -Dmaven.repo.local=${MAVEN_REPO}"
+                        }
+                    }
+                }
+                stage('Python Services') {
+                    steps {
+                        dir('user-microservice') {
+                            sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/"
+                        }
+                        dir('store-ui') {
+                            sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/test_ui.py"
+                        }
+                        stash name: 'python-envs', includes: 'user-microservice/venv/**,store-ui/venv/**'
+                    }
+                }
             }
         }
 
         stage('Build & Security Scan') {
             steps {
                 script {
+                    // Recover stashed dependencies if restarting from this stage
+                    unstash 'node-deps'
+                    unstash 'python-envs'
+                    
                     def serviceList = env.SERVICES.split(',')
                     serviceList.each { svc ->
                         def imageName = "signalforge-prod-${svc}"
+                        def path = (svc == 'api-gateway') ? 'gateway-microservice' : 
+                                   (svc == 'users-service') ? 'user-microservice' : 
+                                   (svc == 'product-service') ? 'product-microservice' : svc
                         
-                        // Map ECR name to correct source folder
-                        def path = svc
-                        if (svc == 'api-gateway') path = 'gateway-microservice'
-                        else if (svc == 'users-service') path = 'user-microservice'
-                        else if (svc == 'product-service') path = 'product-microservice'
-                        else if (svc == 'payment-service') path = 'payment-microservice'
-                        else if (svc == 'order-microservice') path = 'order-microservice'
+                        // Pull latest to use as Docker cache source
+                        sh "docker pull ${ECR_REGISTRY}/${imageName}:latest || true"
                         
-                        echo "--- Building & Scanning: ${imageName} ---"
-                        sh "docker build -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} ./${path}"
+                        sh """
+                            docker build \
+                            --cache-from ${ECR_REGISTRY}/${imageName}:latest \
+                            -t ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG} \
+                            -t ${ECR_REGISTRY}/${imageName}:latest \
+                            ./${path}
+                        """
                         
-                        // SENIOR FIX: Use --skip-db-update to use the pre-warmed DB and save time
-                        // Generates JSON report for the 'post' archive stage
-                        sh "trivy image --skip-db-update --cache-dir ${TRIVY_CACHE} --format json --output trivy-${svc}.json --severity HIGH,CRITICAL ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
+                        sh "trivy image --skip-db-update --cache-dir ${TRIVY_CACHE} --format json --output trivy-${svc}.json ${ECR_REGISTRY}/${imageName}:${IMAGE_TAG}"
                     }
                 }
             }
@@ -79,7 +133,6 @@ pipeline {
             steps {
                 dir('gitops-update') {
                     git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
-                    // Block-aware sed to ensure only the specific service tag is updated
                     script {
                         env.SERVICES.split(',').each { svc ->
                             sh "sed -i '/${svc}:/,/tag:/ s/tag: .*/tag: \"${IMAGE_TAG}\"/' values.yaml"
@@ -99,15 +152,8 @@ pipeline {
 
     post {
         always {
-            // Archive the Trivy JSON reports for audit/compliance
             archiveArtifacts artifacts: 'trivy-*.json', allowEmptyArchive: true
-            // Cleanup block added
-            sh 'docker system prune -af || true'
-            sh 'docker volume prune -f || true'
             cleanWs()
-        }
-        failure {
-            echo "SignalForge Pipeline Failed. Check ECR repo naming or Trivy scan results."
         }
     }
 }
