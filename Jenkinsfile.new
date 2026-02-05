@@ -22,7 +22,6 @@ pipeline {
         NPM_CACHE        = "${env.HOST_CACHE_ROOT}/npm"
         PIP_CACHE        = "${env.HOST_CACHE_ROOT}/pip"
         
-        // Mapping friendly service names to their directory paths
         SERVICE_MAP      = "api-gateway:gateway-microservice,product-service:product-microservice,payment-service:payment-microservice,users-service:user-microservice,store-ui:store-ui"
     }
 
@@ -31,7 +30,6 @@ pipeline {
             steps {
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE}"
                 script {
-                    // Pre-download Trivy DB to avoid timeouts during build
                     sh "trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db --cache-dir ${TRIVY_CACHE}"
                 }
             }
@@ -53,8 +51,27 @@ pipeline {
                 }
                 stage('Python Services') {
                     steps {
-                        dir('user-microservice') { sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest" }
-                        dir('store-ui') { sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest" }
+                        // FIX: Install system headers required for building bcrypt/cryptography
+                        sh "sudo apt-get update && sudo apt-get install -y build-essential libffi-dev python3-dev"
+                        
+                        dir('user-microservice') { 
+                            sh """
+                                python3 -m venv venv
+                                . venv/bin/activate
+                                pip install --upgrade pip
+                                pip install --cache-dir ${PIP_CACHE} -r requirements.txt
+                                python3 -m pytest
+                            """ 
+                        }
+                        dir('store-ui') { 
+                            sh """
+                                python3 -m venv venv
+                                . venv/bin/activate
+                                pip install --upgrade pip
+                                pip install --cache-dir ${PIP_CACHE} -r requirements.txt
+                                python3 -m pytest
+                            """ 
+                        }
                         stash name: 'python-envs', includes: '**/venv/**'
                     }
                 }
@@ -86,7 +103,6 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 script {
-                    // Login and push only after all builds/scans pass
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CRED_ID}", accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
                         sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
                         
@@ -94,7 +110,6 @@ pipeline {
                             def svc = pair.split(':')[0]
                             def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
                             sh "docker push ${fullImage}:${IMAGE_TAG}"
-                            // Also tag and push as latest for convenience
                             sh "docker tag ${fullImage}:${IMAGE_TAG} ${fullImage}:latest"
                             sh "docker push ${fullImage}:latest"
                         }
@@ -105,18 +120,14 @@ pipeline {
 
         stage('GitOps Update') {
             steps {
-                // Use the SSH agent to manage the SignalForge private key
                 sshagent(['signalforge-gitops-ssh']) {
                     dir('gitops-update') {
                         script {
-                            // Ensure the VM trusts GitHub before trying to clone
                             sh "mkdir -p ~/.ssh && ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts"
-                            
                             git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'signalforge-gitops-ssh'
                             
                             env.SERVICE_MAP.split(',').each { pair ->
                                 def svc = pair.split(':')[0]
-                                // Updates the image tag in values.yaml
                                 sh "sed -i 's/${svc}:.*/${svc}: ${IMAGE_TAG}/g' values.yaml"
                             }
                         }
