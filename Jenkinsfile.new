@@ -22,21 +22,20 @@ pipeline {
         TRIVY_CACHE      = "${env.HOST_CACHE_ROOT}/trivy"
         NPM_CACHE        = "${env.HOST_CACHE_ROOT}/npm"
         PIP_CACHE        = "${env.HOST_CACHE_ROOT}/pip"
-        MAVEN_REPO       = "${env.HOST_CACHE_ROOT}/m2"
+        // Note: MAVEN_REPO removed as it is no longer needed without Order service
         
-        SERVICE_MAP      = "api-gateway:gateway-microservice,product-service:product-microservice,order-microservice:order-microservice,payment-service:payment-microservice,users-service:user-microservice,store-ui:store-ui"
+        // UPDATED: order-microservice removed from the map
+        SERVICE_MAP      = "api-gateway:gateway-microservice,product-service:product-microservice,payment-service:payment-microservice,users-service:user-microservice,store-ui:store-ui"
     }
 
     stages {
         stage('Initialize Environment') {
             steps {
-                sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE} ${MAVEN_REPO}"
+                sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE}"
                 script {
-                    echo "--- Pre-warming Trivy DB and Java DB (Required for first run) ---"
-                    // Senior Fix: Download both DBs with a long timeout to prevent 'context deadline exceeded'
-                    // Using GHCR mirror for better stability on VMware
-                    sh "trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db --cache-dir ${TRIVY_CACHE} --timeout 20m"
-                    sh "trivy image --download-java-db-only --cache-dir ${TRIVY_CACHE} --timeout 20m"
+                    echo "--- Pre-warming Trivy DB ---"
+                    // Still pre-warming the vulnerability DB to ensure scans are fast
+                    sh "trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db --cache-dir ${TRIVY_CACHE} --timeout 15m"
                 }
             }
         }
@@ -61,13 +60,7 @@ pipeline {
                         dir('payment-microservice') { sh "go test -v ./..." }
                     }
                 }
-                stage('Java (Order)') {
-                    steps {
-                        dir('order-microservice') {
-                            sh "chmod +x mvnw && ./mvnw clean test -B -Dmaven.repo.local=${MAVEN_REPO}"
-                        }
-                    }
-                }
+                // Stage 'Java (Order)' has been removed
                 stage('Python Services') {
                     steps {
                         dir('user-microservice') { sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/" }
@@ -94,14 +87,12 @@ pipeline {
                         sh "docker pull ${fullImage}:latest || true"
                         sh "docker build --cache-from ${fullImage}:latest -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
                         
-                        // Senior Fix: skip-java-db-update prevents the 800MB hang per image.
-                        // timeout 15m gives the analyzer enough time to look at layers without crashing.
+                        // We still use skip-db-update for speed
                         sh """
                             trivy image \
                             --cache-dir ${TRIVY_CACHE} \
                             --skip-db-update \
-                            --skip-java-db-update \
-                            --timeout 15m \
+                            --timeout 10m \
                             --severity HIGH,CRITICAL \
                             --exit-code 0 \
                             ${fullImage}:${IMAGE_TAG}
