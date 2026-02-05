@@ -4,3 +4,4 @@ python-dotenv==1.0.1
 gunicorn==23.0.0
 pytest==8.0.0
 responses==0.24.1
+bcrypt==4.1.2
