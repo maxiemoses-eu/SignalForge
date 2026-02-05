@@ -15,24 +15,31 @@ pipeline {
         GITOPS_BRANCH    = 'main'
         IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
         
+        // Host paths for persistence on your VMware machine
         HOST_CACHE_ROOT  = "/var/lib/jenkins/persistent_caches"
-        TRIVY_CACHE      = "${env.HOST_CACHE_ROOT}/trivy"
+        TRIVY_CACHE      = "/var/lib/trivy/cache"
         NPM_CACHE        = "${env.HOST_CACHE_ROOT}/npm"
         PIP_CACHE        = "${env.HOST_CACHE_ROOT}/pip"
         MAVEN_REPO       = "${env.HOST_CACHE_ROOT}/m2"
         
-        // Define mapping: ServiceName:DirectoryName
+        // Enable Docker BuildKit for advanced caching features
+        DOCKER_BUILDKIT  = "1"
+        
         SERVICE_MAP      = "api-gateway:gateway-microservice,product-service:product-microservice,order-microservice:order-microservice,payment-service:payment-microservice,users-service:user-microservice,store-ui:store-ui"
     }
 
     stages {
         stage('Initialize Environment') {
             steps {
-                sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE} ${MAVEN_REPO}"
+                sh "mkdir -p ${HOST_CACHE_ROOT} ${NPM_CACHE} ${PIP_CACHE} ${MAVEN_REPO}"
                 script {
-                    // SENIOR FIX: Always try to update/download DB once at start of build
-                    // If it exists, Trivy is smart enough to only download incremental diffs
-                    sh "trivy image --download-db-only --cache-dir ${TRIVY_CACHE}"
+                    def dbFile = "${TRIVY_CACHE}/db/trivy.db"
+                    def needsUpdate = sh(script: "find ${dbFile} -mmin +1440 | grep -q . || [ ! -f ${dbFile} ]", returnStatus: true) == 0
+
+                    if (needsUpdate) {
+                        echo "SignalForge: Updating Trivy DB..."
+                        sh "trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db --cache-dir ${TRIVY_CACHE}"
+                    }
                 }
             }
         }
@@ -41,14 +48,12 @@ pipeline {
             parallel {
                 stage('Node Services') {
                     steps {
-                        retry(2) {
-                            dir('gateway-microservice') {
-                                sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
-                                sh "npm test -- --watchAll=false"
-                            }
+                        dir('gateway-microservice') {
+                            sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
+                            sh "npm test -- --watchAll=false"
                         }
                         dir('product-microservice') {
-                            sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
+                            sh "npm_config_cache=${NPM_CACHE} npm ci --prefer-offline"
                             sh "npm test -- --watchAll=false"
                         }
                         stash name: 'node-deps', includes: '**/node_modules/**', useDefaultExcludes: false
@@ -56,25 +61,21 @@ pipeline {
                 }
                 stage('Go (Payment)') {
                     steps {
-                        dir('payment-microservice') {
-                            sh "go test -v ./..."
-                        }
+                        dir('payment-microservice') { sh "go test -v ./..." }
                     }
                 }
                 stage('Java (Order)') {
                     steps {
                         dir('order-microservice') {
-                            // Added -B (Batch mode) to prevent log spamming which slows down Jenkins
+                            // Using local repo on the VM host to avoid re-downloading during testing
                             sh "chmod +x mvnw && ./mvnw clean test -B -Dmaven.repo.local=${MAVEN_REPO}"
                         }
                     }
                 }
                 stage('Python Services') {
                     steps {
-                        retry(2) {
-                            dir('user-microservice') {
-                                sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/"
-                            }
+                        dir('user-microservice') {
+                            sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/"
                         }
                         dir('store-ui') {
                             sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/test_ui.py"
@@ -97,13 +98,19 @@ pipeline {
                         def path = parts[1]
                         def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
 
-                        echo "Building ${svc} from ${path}..."
-                        
-                        // Use the :latest image as a cache source to speed up builds
+                        echo "--- Building ${svc} ---"
                         sh "docker pull ${fullImage}:latest || true"
-                        sh "docker build --cache-from ${fullImage}:latest -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
                         
-                        // Scan local image; exit-code 0 ensures pipeline continues even if vulnerabilities exist
+                        // Using DOCKER_BUILDKIT=1 here speeds up the Order microservice build
+                        sh """
+                            export DOCKER_BUILDKIT=1
+                            docker build \
+                                --cache-from ${fullImage}:latest \
+                                -t ${fullImage}:${IMAGE_TAG} \
+                                -t ${fullImage}:latest \
+                                ./${path}
+                        """
+                        
                         sh "trivy image --skip-db-update --cache-dir ${TRIVY_CACHE} --severity HIGH,CRITICAL --exit-code 0 ${fullImage}:${IMAGE_TAG}"
                     }
                 }
@@ -132,7 +139,6 @@ pipeline {
                     script {
                         env.SERVICE_MAP.split(',').each { pair ->
                             def svc = pair.split(':')[0]
-                            // Robust Regex for YAML tag replacement
                             sh "sed -i 's/${svc}:.*/${svc}: ${IMAGE_TAG}/g' values.yaml"
                         }
                     }
