@@ -13,7 +13,7 @@ pipeline {
         
         AWS_REGION       = 'us-west-2'
         ECR_REGISTRY     = '418384447470.dkr.ecr.us-west-2.amazonaws.com'
-        AWS_CRED_ID      = 'signalforge-friend-account' // The ID from your Store
+        AWS_CRED_ID      = 'signalforge-friend-account'
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
         
@@ -26,6 +26,13 @@ pipeline {
     }
 
     stages {
+        stage('Fix Clock Skew') {
+            steps {
+                // Prevents the "Signature Expired" error during the Push stage
+                sh "sudo ntpdate -u ntp.ubuntu.com || echo 'Sync failed, but trying anyway...'"
+            }
+        }
+
         stage('Initialize Environment') {
             steps {
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE}"
@@ -66,43 +73,24 @@ pipeline {
             }
         }
 
-        stage('Docker Build & Scan') {
+        stage('Docker Build & Scan (Local Only)') {
             steps {
                 script {
                     unstash 'node-deps'
                     unstash 'python-envs'
                     
-                    // UPDATED: Using withCredentials block from your infra pipeline
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: "${AWS_CRED_ID}",
-                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-                    ]]) {
-                        // Log into ECR using the credentials bound above
-                        sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-                        
-                        env.SERVICE_MAP.split(',').each { pair ->
-                            def parts = pair.split(':')
-                            def svc = parts[0]
-                            def path = parts[1]
-                            def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
+                    env.SERVICE_MAP.split(',').each { pair ->
+                        def parts = pair.split(':')
+                        def svc = parts[0]
+                        def path = parts[1]
+                        def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
 
-                            echo "--- Building & Scanning ${svc} (Version: ${IMAGE_TAG}) ---"
-                            
-                            sh "docker pull ${fullImage}:latest || true"
-                            sh "docker build --cache-from ${fullImage}:latest -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
-                            
-                            sh """
-                                trivy image \
-                                --cache-dir ${TRIVY_CACHE} \
-                                --skip-db-update \
-                                --timeout 15m \
-                                --severity HIGH,CRITICAL \
-                                --exit-code 0 \
-                                ${fullImage}:${IMAGE_TAG}
-                            """
-                        }
+                        echo "--- Building ${svc} Locally (No Pull) ---"
+                        // NO --cache-from and NO docker pull here
+                        sh "docker build -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
+                        
+                        echo "--- Scanning Local Image ${svc} ---"
+                        sh "trivy image --cache-dir ${TRIVY_CACHE} --skip-db-update --timeout 15m --severity HIGH,CRITICAL --exit-code 0 ${fullImage}:${IMAGE_TAG}"
                     }
                 }
             }
@@ -111,7 +99,7 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 script {
-                    // UPDATED: Using withCredentials block from your infra pipeline
+                    // This is the ONLY place we log in, right before pushing the finished work
                     withCredentials([[
                         $class: 'AmazonWebServicesCredentialsBinding',
                         credentialsId: "${AWS_CRED_ID}",
@@ -119,9 +107,12 @@ pipeline {
                         secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
                     ]]) {
                         sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                        
                         env.SERVICE_MAP.split(',').each { pair ->
                             def svc = pair.split(':')[0]
                             def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
+                            
+                            echo "🚀 Pushing ${svc} version ${IMAGE_TAG} to AWS..."
                             sh "docker push ${fullImage}:${IMAGE_TAG}"
                             sh "docker push ${fullImage}:latest"
                         }
