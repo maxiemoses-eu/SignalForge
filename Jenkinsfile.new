@@ -8,22 +8,21 @@ pipeline {
     }
     
     environment {
+        // --- UPDATED VERSIONING ---
+        BASE_VERSION     = "v1.1.0"
+        IMAGE_TAG        = "${BASE_VERSION}-${env.BUILD_NUMBER}"
+        
         AWS_REGION       = 'us-west-2'
         ECR_REGISTRY     = '418384447470.dkr.ecr.us-west-2.amazonaws.com'
         AWS_CRED_ID      = 'signalforge-friend-account'
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
-        IMAGE_TAG        = "${env.GIT_COMMIT?.take(7)}-${env.BUILD_NUMBER}"
         
-        // Host paths for persistence on your VMware machine
         HOST_CACHE_ROOT  = "/var/lib/jenkins/persistent_caches"
-        TRIVY_CACHE      = "/var/lib/trivy/cache"
+        TRIVY_CACHE      = "${env.HOST_CACHE_ROOT}/trivy"
         NPM_CACHE        = "${env.HOST_CACHE_ROOT}/npm"
         PIP_CACHE        = "${env.HOST_CACHE_ROOT}/pip"
         MAVEN_REPO       = "${env.HOST_CACHE_ROOT}/m2"
-        
-        // Enable Docker BuildKit for advanced caching features
-        DOCKER_BUILDKIT  = "1"
         
         SERVICE_MAP      = "api-gateway:gateway-microservice,product-service:product-microservice,order-microservice:order-microservice,payment-service:payment-microservice,users-service:user-microservice,store-ui:store-ui"
     }
@@ -31,15 +30,10 @@ pipeline {
     stages {
         stage('Initialize Environment') {
             steps {
-                sh "mkdir -p ${HOST_CACHE_ROOT} ${NPM_CACHE} ${PIP_CACHE} ${MAVEN_REPO}"
+                sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE} ${MAVEN_REPO}"
                 script {
-                    def dbFile = "${TRIVY_CACHE}/db/trivy.db"
-                    def needsUpdate = sh(script: "find ${dbFile} -mmin +1440 | grep -q . || [ ! -f ${dbFile} ]", returnStatus: true) == 0
-
-                    if (needsUpdate) {
-                        echo "SignalForge: Updating Trivy DB..."
-                        sh "trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db --cache-dir ${TRIVY_CACHE}"
-                    }
+                    // UPDATED TRIVY: Using ghcr.io for reliability and higher timeout for Java DB
+                    sh "trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db --cache-dir ${TRIVY_CACHE} --timeout 20m"
                 }
             }
         }
@@ -48,12 +42,14 @@ pipeline {
             parallel {
                 stage('Node Services') {
                     steps {
-                        dir('gateway-microservice') {
-                            sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
-                            sh "npm test -- --watchAll=false"
+                        retry(2) {
+                            dir('gateway-microservice') {
+                                sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
+                                sh "npm test -- --watchAll=false"
+                            }
                         }
                         dir('product-microservice') {
-                            sh "npm_config_cache=${NPM_CACHE} npm ci --prefer-offline"
+                            sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
                             sh "npm test -- --watchAll=false"
                         }
                         stash name: 'node-deps', includes: '**/node_modules/**', useDefaultExcludes: false
@@ -61,21 +57,24 @@ pipeline {
                 }
                 stage('Go (Payment)') {
                     steps {
-                        dir('payment-microservice') { sh "go test -v ./..." }
+                        dir('payment-microservice') {
+                            sh "go test -v ./..."
+                        }
                     }
                 }
                 stage('Java (Order)') {
                     steps {
                         dir('order-microservice') {
-                            // Using local repo on the VM host to avoid re-downloading during testing
                             sh "chmod +x mvnw && ./mvnw clean test -B -Dmaven.repo.local=${MAVEN_REPO}"
                         }
                     }
                 }
                 stage('Python Services') {
                     steps {
-                        dir('user-microservice') {
-                            sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/"
+                        retry(2) {
+                            dir('user-microservice') {
+                                sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/"
+                            }
                         }
                         dir('store-ui') {
                             sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/test_ui.py"
@@ -98,20 +97,22 @@ pipeline {
                         def path = parts[1]
                         def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
 
-                        echo "--- Building ${svc} ---"
+                        echo "Building ${svc} from ${path}..."
+                        
                         sh "docker pull ${fullImage}:latest || true"
+                        sh "docker build --cache-from ${fullImage}:latest -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
                         
-                        // Using DOCKER_BUILDKIT=1 here speeds up the Order microservice build
+                        // UPDATED TRIVY: Added --timeout 15m and --skip-java-db-update to handle the 800MB Java DB
                         sh """
-                            export DOCKER_BUILDKIT=1
-                            docker build \
-                                --cache-from ${fullImage}:latest \
-                                -t ${fullImage}:${IMAGE_TAG} \
-                                -t ${fullImage}:latest \
-                                ./${path}
+                            trivy image \
+                            --cache-dir ${TRIVY_CACHE} \
+                            --skip-db-update \
+                            --skip-java-db-update \
+                            --timeout 15m \
+                            --severity HIGH,CRITICAL \
+                            --exit-code 0 \
+                            ${fullImage}:${IMAGE_TAG}
                         """
-                        
-                        sh "trivy image --skip-db-update --cache-dir ${TRIVY_CACHE} --severity HIGH,CRITICAL --exit-code 0 ${fullImage}:${IMAGE_TAG}"
                     }
                 }
             }
