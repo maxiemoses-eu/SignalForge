@@ -22,16 +22,17 @@ pipeline {
         NPM_CACHE        = "${env.HOST_CACHE_ROOT}/npm"
         PIP_CACHE        = "${env.HOST_CACHE_ROOT}/pip"
         
+        // Mapping friendly service names to their directory paths
         SERVICE_MAP      = "api-gateway:gateway-microservice,product-service:product-microservice,payment-service:payment-microservice,users-service:user-microservice,store-ui:store-ui"
     }
 
     stages {
-        stage('Initialize Environment') {
+        stage('Initialize') {
             steps {
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE}"
                 script {
-                    echo "--- Pre-warming Trivy DB ---"
-                    sh "trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db --cache-dir ${TRIVY_CACHE} --timeout 15m"
+                    // Pre-download Trivy DB to avoid timeouts during build
+                    sh "trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db --cache-dir ${TRIVY_CACHE}"
                 }
             }
         }
@@ -40,67 +41,43 @@ pipeline {
             parallel {
                 stage('Node Services') {
                     steps {
-                        dir('gateway-microservice') {
-                            sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
-                            sh "npm test -- --watchAll=false"
-                        }
-                        dir('product-microservice') {
-                            sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
-                            sh "npm test -- --watchAll=false"
-                        }
+                        dir('gateway-microservice') { sh "npm ci --cache ${NPM_CACHE} && npm test -- --watchAll=false" }
+                        dir('product-microservice') { sh "npm ci --cache ${NPM_CACHE} && npm test -- --watchAll=false" }
                         stash name: 'node-deps', includes: '**/node_modules/**', useDefaultExcludes: false
                     }
                 }
-                stage('Go (Payment)') {
+                stage('Go Services') {
                     steps {
                         dir('payment-microservice') { sh "go test -v ./..." }
                     }
                 }
                 stage('Python Services') {
                     steps {
-                        dir('user-microservice') { sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/" }
-                        dir('store-ui') { sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/test_ui.py" }
+                        dir('user-microservice') { sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest" }
+                        dir('store-ui') { sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest" }
                         stash name: 'python-envs', includes: '**/venv/**'
                     }
                 }
             }
         }
 
-        stage('Docker Build & Scan') {
+        stage('Docker Build & Scan (Local)') {
             steps {
                 script {
                     unstash 'node-deps'
                     unstash 'python-envs'
                     
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: "${AWS_CRED_ID}",
-                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-                    ]]) {
-                        sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-                        
-                        env.SERVICE_MAP.split(',').each { pair ->
-                            def parts = pair.split(':')
-                            def svc = parts[0]
-                            def path = parts[1]
-                            def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
+                    env.SERVICE_MAP.split(',').each { pair ->
+                        def parts = pair.split(':')
+                        def svc = parts[0]
+                        def path = parts[1]
+                        def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
 
-                            echo "--- Building & Scanning ${svc} (Version: ${IMAGE_TAG}) ---"
-                            
-                            // UPDATED: Removed docker pull and --cache-from
-                            sh "docker build -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
-                            
-                            sh """
-                                trivy image \
-                                --cache-dir ${TRIVY_CACHE} \
-                                --skip-db-update \
-                                --timeout 15m \
-                                --severity HIGH,CRITICAL \
-                                --exit-code 0 \
-                                ${fullImage}:${IMAGE_TAG}
-                            """
-                        }
+                        echo "--- Building ${svc} Locally ---"
+                        sh "docker build -t ${fullImage}:${IMAGE_TAG} ./${path}"
+                        
+                        echo "--- Scanning ${svc} ---"
+                        sh "trivy image --cache-dir ${TRIVY_CACHE} --skip-db-update --severity HIGH,CRITICAL --exit-code 0 ${fullImage}:${IMAGE_TAG}"
                     }
                 }
             }
@@ -109,17 +86,16 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 script {
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: "${AWS_CRED_ID}",
-                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-                    ]]) {
+                    // Login and push only after all builds/scans pass
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CRED_ID}", accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
                         sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                        
                         env.SERVICE_MAP.split(',').each { pair ->
                             def svc = pair.split(':')[0]
                             def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
                             sh "docker push ${fullImage}:${IMAGE_TAG}"
+                            // Also tag and push as latest for convenience
+                            sh "docker tag ${fullImage}:${IMAGE_TAG} ${fullImage}:latest"
                             sh "docker push ${fullImage}:latest"
                         }
                     }
@@ -129,20 +105,29 @@ pipeline {
 
         stage('GitOps Update') {
             steps {
-                dir('gitops-update') {
-                    git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'gitops-ssh-key'
-                    script {
-                        env.SERVICE_MAP.split(',').each { pair ->
-                            def svc = pair.split(':')[0]
-                            sh "sed -i 's/${svc}:.*/${svc}: ${IMAGE_TAG}/g' values.yaml"
+                // Use the SSH agent to manage the SignalForge private key
+                sshagent(['signalforge-gitops-ssh']) {
+                    dir('gitops-update') {
+                        script {
+                            // Ensure the VM trusts GitHub before trying to clone
+                            sh "mkdir -p ~/.ssh && ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts"
+                            
+                            git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'signalforge-gitops-ssh'
+                            
+                            env.SERVICE_MAP.split(',').each { pair ->
+                                def svc = pair.split(':')[0]
+                                // Updates the image tag in values.yaml
+                                sh "sed -i 's/${svc}:.*/${svc}: ${IMAGE_TAG}/g' values.yaml"
+                            }
                         }
+                        sh """
+                            git config user.email "jenkins@signalforge.com"
+                            git config user.name "Jenkins CI"
+                            git add values.yaml
+                            git commit -m "chore(signalforge): auto-update images to ${IMAGE_TAG} [skip ci]" || true
+                            git push origin ${GITOPS_BRANCH}
+                        """
                     }
-                    sh """
-                        git config user.email "jenkins@signalforge.com"
-                        git config user.name "Jenkins CI"
-                        git commit -am "chore(signalforge): auto-update images to ${IMAGE_TAG}" || true
-                        git push origin ${GITOPS_BRANCH}
-                    """
                 }
             }
         }
