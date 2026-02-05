@@ -26,13 +26,6 @@ pipeline {
     }
 
     stages {
-        stage('Fix Clock Skew') {
-            steps {
-                // Prevents the "Signature Expired" error during the Push stage
-                sh "sudo ntpdate -u ntp.ubuntu.com || echo 'Sync failed, but trying anyway...'"
-            }
-        }
-
         stage('Initialize Environment') {
             steps {
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE}"
@@ -73,33 +66,12 @@ pipeline {
             }
         }
 
-        stage('Docker Build & Scan (Local Only)') {
+        stage('Docker Build & Scan') {
             steps {
                 script {
                     unstash 'node-deps'
                     unstash 'python-envs'
                     
-                    env.SERVICE_MAP.split(',').each { pair ->
-                        def parts = pair.split(':')
-                        def svc = parts[0]
-                        def path = parts[1]
-                        def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
-
-                        echo "--- Building ${svc} Locally (No Pull) ---"
-                        // NO --cache-from and NO docker pull here
-                        sh "docker build -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
-                        
-                        echo "--- Scanning Local Image ${svc} ---"
-                        sh "trivy image --cache-dir ${TRIVY_CACHE} --skip-db-update --timeout 15m --severity HIGH,CRITICAL --exit-code 0 ${fullImage}:${IMAGE_TAG}"
-                    }
-                }
-            }
-        }
-
-        stage('Push to ECR') {
-            steps {
-                script {
-                    // This is the ONLY place we log in, right before pushing the finished work
                     withCredentials([[
                         $class: 'AmazonWebServicesCredentialsBinding',
                         credentialsId: "${AWS_CRED_ID}",
@@ -109,10 +81,44 @@ pipeline {
                         sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
                         
                         env.SERVICE_MAP.split(',').each { pair ->
+                            def parts = pair.split(':')
+                            def svc = parts[0]
+                            def path = parts[1]
+                            def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
+
+                            echo "--- Building & Scanning ${svc} (Version: ${IMAGE_TAG}) ---"
+                            
+                            // UPDATED: Removed docker pull and --cache-from
+                            sh "docker build -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
+                            
+                            sh """
+                                trivy image \
+                                --cache-dir ${TRIVY_CACHE} \
+                                --skip-db-update \
+                                --timeout 15m \
+                                --severity HIGH,CRITICAL \
+                                --exit-code 0 \
+                                ${fullImage}:${IMAGE_TAG}
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Push to ECR') {
+            steps {
+                script {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: "${AWS_CRED_ID}",
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                        env.SERVICE_MAP.split(',').each { pair ->
                             def svc = pair.split(':')[0]
                             def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
-                            
-                            echo "🚀 Pushing ${svc} version ${IMAGE_TAG} to AWS..."
                             sh "docker push ${fullImage}:${IMAGE_TAG}"
                             sh "docker push ${fullImage}:latest"
                         }
