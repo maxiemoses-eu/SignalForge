@@ -8,7 +8,7 @@ pipeline {
     }
     
     environment {
-        // --- UPDATED VERSIONING ---
+        // --- VERSIONING ---
         BASE_VERSION     = "v1.1.0"
         IMAGE_TAG        = "${BASE_VERSION}-${env.BUILD_NUMBER}"
         
@@ -32,8 +32,11 @@ pipeline {
             steps {
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE} ${MAVEN_REPO}"
                 script {
-                    // UPDATED TRIVY: Using ghcr.io for reliability and higher timeout for Java DB
+                    echo "--- Pre-warming Trivy DB and Java DB (Required for first run) ---"
+                    // Senior Fix: Download both DBs with a long timeout to prevent 'context deadline exceeded'
+                    // Using GHCR mirror for better stability on VMware
                     sh "trivy image --download-db-only --db-repository ghcr.io/aquasecurity/trivy-db --cache-dir ${TRIVY_CACHE} --timeout 20m"
+                    sh "trivy image --download-java-db-only --cache-dir ${TRIVY_CACHE} --timeout 20m"
                 }
             }
         }
@@ -42,11 +45,9 @@ pipeline {
             parallel {
                 stage('Node Services') {
                     steps {
-                        retry(2) {
-                            dir('gateway-microservice') {
-                                sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
-                                sh "npm test -- --watchAll=false"
-                            }
+                        dir('gateway-microservice') {
+                            sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
+                            sh "npm test -- --watchAll=false"
                         }
                         dir('product-microservice') {
                             sh "npm ci --cache ${NPM_CACHE} --prefer-offline"
@@ -57,9 +58,7 @@ pipeline {
                 }
                 stage('Go (Payment)') {
                     steps {
-                        dir('payment-microservice') {
-                            sh "go test -v ./..."
-                        }
+                        dir('payment-microservice') { sh "go test -v ./..." }
                     }
                 }
                 stage('Java (Order)') {
@@ -71,14 +70,8 @@ pipeline {
                 }
                 stage('Python Services') {
                     steps {
-                        retry(2) {
-                            dir('user-microservice') {
-                                sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/"
-                            }
-                        }
-                        dir('store-ui') {
-                            sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/test_ui.py"
-                        }
+                        dir('user-microservice') { sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/" }
+                        dir('store-ui') { sh "python3 -m venv venv && . venv/bin/activate && pip install --cache-dir ${PIP_CACHE} -r requirements.txt && python3 -m pytest tests/test_ui.py" }
                         stash name: 'python-envs', includes: '**/venv/**'
                     }
                 }
@@ -97,12 +90,12 @@ pipeline {
                         def path = parts[1]
                         def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
 
-                        echo "Building ${svc} from ${path}..."
-                        
+                        echo "--- Building & Scanning ${svc} ---"
                         sh "docker pull ${fullImage}:latest || true"
                         sh "docker build --cache-from ${fullImage}:latest -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
                         
-                        // UPDATED TRIVY: Added --timeout 15m and --skip-java-db-update to handle the 800MB Java DB
+                        // Senior Fix: skip-java-db-update prevents the 800MB hang per image.
+                        // timeout 15m gives the analyzer enough time to look at layers without crashing.
                         sh """
                             trivy image \
                             --cache-dir ${TRIVY_CACHE} \
