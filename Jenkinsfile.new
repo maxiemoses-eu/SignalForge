@@ -51,24 +51,30 @@ pipeline {
                 }
                 stage('Python Services') {
                     steps {
-                        // FIX: Install system headers required for building bcrypt/cryptography
+                        // Ensure system dependencies for bcrypt/cryptography are present
                         sh "sudo apt-get update && sudo apt-get install -y build-essential libffi-dev python3-dev"
                         
                         dir('user-microservice') { 
                             sh """
+                                rm -rf venv
                                 python3 -m venv venv
                                 . venv/bin/activate
                                 pip install --upgrade pip
                                 pip install --cache-dir ${PIP_CACHE} -r requirements.txt
+                                echo "--- VERIFYING INSTALLED PACKAGES (USER SERVICE) ---"
+                                pip list
                                 python3 -m pytest
                             """ 
                         }
                         dir('store-ui') { 
                             sh """
+                                rm -rf venv
                                 python3 -m venv venv
                                 . venv/bin/activate
                                 pip install --upgrade pip
                                 pip install --cache-dir ${PIP_CACHE} -r requirements.txt
+                                echo "--- VERIFYING INSTALLED PACKAGES (STORE UI) ---"
+                                pip list
                                 python3 -m pytest
                             """ 
                         }
