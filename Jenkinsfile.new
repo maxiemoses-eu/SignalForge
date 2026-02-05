@@ -13,7 +13,7 @@ pipeline {
         
         AWS_REGION       = 'us-west-2'
         ECR_REGISTRY     = '418384447470.dkr.ecr.us-west-2.amazonaws.com'
-        AWS_CRED_ID      = 'signalforge-friend-account'
+        AWS_CRED_ID      = 'signalforge-friend-account' // The ID from your Store
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
         
@@ -72,8 +72,14 @@ pipeline {
                     unstash 'node-deps'
                     unstash 'python-envs'
                     
-                    // LOGIN FIRST: Wrapped entire loop in withAWS to prevent 'Access Denied'
-                    withAWS(credentials: "${AWS_CRED_ID}", region: "${AWS_REGION}") {
+                    // UPDATED: Using withCredentials block from your infra pipeline
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: "${AWS_CRED_ID}",
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        // Log into ECR using the credentials bound above
                         sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
                         
                         env.SERVICE_MAP.split(',').each { pair ->
@@ -82,13 +88,11 @@ pipeline {
                             def path = parts[1]
                             def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
 
-                            echo "--- Processing ${svc} (Version: ${IMAGE_TAG}) ---"
+                            echo "--- Building & Scanning ${svc} (Version: ${IMAGE_TAG}) ---"
                             
-                            // Use double-quotes to ensure IMAGE_TAG variable is injected
                             sh "docker pull ${fullImage}:latest || true"
                             sh "docker build --cache-from ${fullImage}:latest -t ${fullImage}:${IMAGE_TAG} -t ${fullImage}:latest ./${path}"
                             
-                            // Increased timeout to 15m to prevent 'context deadline exceeded'
                             sh """
                                 trivy image \
                                 --cache-dir ${TRIVY_CACHE} \
@@ -107,12 +111,17 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 script {
-                    withAWS(credentials: "${AWS_CRED_ID}", region: "${AWS_REGION}") {
+                    // UPDATED: Using withCredentials block from your infra pipeline
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: "${AWS_CRED_ID}",
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
                         sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
                         env.SERVICE_MAP.split(',').each { pair ->
                             def svc = pair.split(':')[0]
                             def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
-                            // PUSH BOTH TAGS
                             sh "docker push ${fullImage}:${IMAGE_TAG}"
                             sh "docker push ${fullImage}:latest"
                         }
@@ -128,7 +137,6 @@ pipeline {
                     script {
                         env.SERVICE_MAP.split(',').each { pair ->
                             def svc = pair.split(':')[0]
-                            // Update values.yaml to point to the specific version tag
                             sh "sed -i 's/${svc}:.*/${svc}: ${IMAGE_TAG}/g' values.yaml"
                         }
                     }
