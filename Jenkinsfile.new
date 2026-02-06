@@ -14,6 +14,7 @@ pipeline {
         AWS_REGION       = 'us-west-2'
         ECR_REGISTRY     = '418384447470.dkr.ecr.us-west-2.amazonaws.com'
         AWS_CRED_ID      = 'signalforge-friend-account'
+        
         GITOPS_REPO      = 'git@github.com:maxiemoses-eu/SignalForge-ArgoCD.git'
         GITOPS_BRANCH    = 'main'
         
@@ -22,11 +23,26 @@ pipeline {
         NPM_CACHE        = "${env.HOST_CACHE_ROOT}/npm"
         PIP_CACHE        = "${env.HOST_CACHE_ROOT}/pip"
         
-        // Map of friendly service names to their directory paths
         SERVICE_MAP      = "api-gateway:gateway-microservice,product-service:product-microservice,payment-service:payment-microservice,users-service:user-microservice,store-ui:store-ui"
     }
 
     stages {
+        stage('Verify AWS Identity') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: "${AWS_CRED_ID}", 
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    sh '''
+                        echo "🔍 Verifying AWS Connection for Account 418384447470..."
+                        aws sts get-caller-identity
+                    '''
+                }
+            }
+        }
+
         stage('Initialize') {
             steps {
                 sh "mkdir -p ${TRIVY_CACHE} ${NPM_CACHE} ${PIP_CACHE}"
@@ -52,10 +68,6 @@ pipeline {
                 }
                 stage('Python Services') {
                     steps {
-                        // FIX: We no longer run 'sudo' here. 
-                        // Ensure you have run 'sudo apt-get install -y build-essential libffi-dev python3-dev' 
-                        // manually on your Jenkins VM once.
-                        
                         dir('user-microservice') { 
                             sh """
                                 rm -rf venv
@@ -63,8 +75,6 @@ pipeline {
                                 . venv/bin/activate
                                 pip install --upgrade pip
                                 pip install --cache-dir ${PIP_CACHE} -r requirements.txt
-                                echo "--- Audit: User Service Packages ---"
-                                pip list
                                 python3 -m pytest
                             """ 
                         }
@@ -75,8 +85,6 @@ pipeline {
                                 . venv/bin/activate
                                 pip install --upgrade pip
                                 pip install --cache-dir ${PIP_CACHE} -r requirements.txt
-                                echo "--- Audit: Store UI Packages ---"
-                                pip list
                                 python3 -m pytest
                             """ 
                         }
@@ -86,37 +94,34 @@ pipeline {
             }
         }
 
-        stage('Docker Build & Scan') {
+        stage('Docker Build, Scan & Push') {
             steps {
                 script {
                     unstash 'node-deps'
                     unstash 'python-envs'
                     
-                    env.SERVICE_MAP.split(',').each { pair ->
-                        def parts = pair.split(':')
-                        def svc = parts[0]
-                        def path = parts[1]
-                        def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
-
-                        echo "--- Building ${svc} ---"
-                        sh "docker build -t ${fullImage}:${IMAGE_TAG} ./${path}"
-                        
-                        echo "--- Scanning ${svc} ---"
-                        sh "trivy image --cache-dir ${TRIVY_CACHE} --skip-db-update --severity HIGH,CRITICAL --exit-code 0 ${fullImage}:${IMAGE_TAG}"
-                    }
-                }
-            }
-        }
-
-        stage('Push to ECR') {
-            steps {
-                script {
-                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CRED_ID}", accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding', 
+                        credentialsId: "${AWS_CRED_ID}", 
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        // Login to ECR first
                         sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-                        
+
                         env.SERVICE_MAP.split(',').each { pair ->
-                            def svc = pair.split(':')[0]
+                            def parts = pair.split(':')
+                            def svc = parts[0]
+                            def path = parts[1]
                             def fullImage = "${ECR_REGISTRY}/signalforge-prod-${svc}"
+
+                            echo "--- Processing ${svc} ---"
+                            sh "docker build -t ${fullImage}:${IMAGE_TAG} ./${path}"
+                            
+                            echo "--- Scanning ${svc} ---"
+                            sh "trivy image --cache-dir ${TRIVY_CACHE} --severity HIGH,CRITICAL --exit-code 0 ${fullImage}:${IMAGE_TAG}"
+
+                            echo "--- Pushing ${svc} ---"
                             sh "docker push ${fullImage}:${IMAGE_TAG}"
                             sh "docker tag ${fullImage}:${IMAGE_TAG} ${fullImage}:latest"
                             sh "docker push ${fullImage}:latest"
@@ -131,14 +136,11 @@ pipeline {
                 sshagent(['signalforge-gitops-ssh']) {
                     dir('gitops-update') {
                         script {
-                            // Fixes Host Key Verification failures
                             sh "mkdir -p ~/.ssh && ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts"
-                            
                             git url: "${GITOPS_REPO}", branch: "${GITOPS_BRANCH}", credentialsId: 'signalforge-gitops-ssh'
                             
                             env.SERVICE_MAP.split(',').each { pair ->
                                 def svc = pair.split(':')[0]
-                                // Using || true prevents 'sed' from crashing the loop if a service is missing from values.yaml
                                 sh "sed -i 's/${svc}:.*/${svc}: ${IMAGE_TAG}/g' values.yaml || true"
                             }
                         }
@@ -146,7 +148,6 @@ pipeline {
                             git config user.email "jenkins@signalforge.com"
                             git config user.name "Jenkins CI"
                             git add values.yaml
-                            # FIX for Exit Code 2: prevents failure if there are no changes to commit
                             git commit -m "chore(signalforge): update images to ${IMAGE_TAG} [skip ci]" || echo "No changes to commit"
                             git push origin ${GITOPS_BRANCH}
                         """
@@ -159,6 +160,7 @@ pipeline {
     post {
         always {
             cleanWs()
+            sh "docker logout ${ECR_REGISTRY} || true"
         }
     }
 }
