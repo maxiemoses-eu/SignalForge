@@ -12,23 +12,36 @@ This project is designed not only to sell products, but to **generate high-fidel
 
 ## 🧩 Architecture Overview
 
-```
-┌────────────┐
-│   React UI │
-│ (nginx)    │
-└─────┬──────┘
-      │ /api/*
-      ▼
-┌───────────────────────────────┐
-│        Backend Services       │
-│                               │
-│  User Service     (Python)    │
-│  Prosuct Service  (Node.js)   │
-│  Order Service    (Java)      │
-│  Payment Service  (Go) 
-       │
-└───────────────────────────────┘
-```
+                      +-------------------+
+                      |   1. APP REPO     | (Microservices & UI)
+                      +---------+---------+
+                                | [CI Pipeline]
+                                | 1. Tests & Security Scans
+                                | 2. Builds Docker Image
+                                v
+                      +-------------------+
+                      | Azure Container   |
+                      | Registry (ACR)    |
+                      +-------------------+
+                                ^
+                                | Pulls Image
+  +------------------+          |
+  | 2. IaC REPO      |          |
+  +---------+--------+          |
+            | [Terraform]       |
+            v                   |
+  +------------------+          |
+  | Azure Kubernetes | <--------+
+  |  Service (AKS)   |
+  +--------+---------+
+           ^
+           | [GitOps Loop]
+           | Synchronizes State
+  +--------+---------+
+  | 3. GITOPS REPO   | (Helm Charts / Kustomize / Application YAMLs)
+  +------------------+
+
+
 
 Each service:
 
