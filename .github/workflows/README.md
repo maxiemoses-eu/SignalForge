@@ -39,21 +39,21 @@ flowchart LR
     class Azure resource;
 ```
 
-Execution Mechanics
+## Execution Mechanics
 
-    OIDC Token Issuance: The runner requests a cryptographically signed JSON Web Token (JWT) directly from GitHub's Security Token Service (STS), proving the precise repository, branch, and runtime context.
+OIDC Token Issuance: The runner requests a cryptographically signed JSON Web Token (JWT) directly from GitHub's Security Token Service (STS), proving the precise repository, branch, and runtime context.
 
-    Federated Validation: The token is forwarded to Microsoft Entra ID, which cross-references the token's claims against our pre-configured infrastructure trust relationships.
+Federated Validation: The token is forwarded to Microsoft Entra ID, which cross-references the token's claims against our pre-configured infrastructure trust relationships.
 
-    Short-Lived Authorization: Upon validation, Entra ID mints a scoped, ephemeral OAuth2 access token valid for exactly 60 minutes. No static credentials touch disk, runner state memory, or logs.
+Short-Lived Authorization: Upon validation, Entra ID mints a scoped, ephemeral OAuth2 access token valid for exactly 60 minutes. No static credentials touch disk, runner state memory, or logs.
 
-2. Dynamic Component Isolation (Cost Optimization)
+## Dynamic Component Isolation (Cost Optimization)
 
 To optimize compute consumption and minimize GitHub Enterprise runner bills, this pipeline implements Asynchronous Path-Filtering Gates.
 
-    The Problem: Standard monorepos/multi-service repos suffer from "Ghost Matrix Runs"—where editing a single frontend asset triggers heavy compilation, linting, and scanning jobs across every single backend microservice.
+The Problem: Standard monorepos/multi-service repos suffer from "Ghost Matrix Runs"—where editing a single frontend asset triggers heavy compilation, linting, and scanning jobs across every single backend microservice.
 
-    The Solution: An upstream inspect_changes job calculates the precise structural delta of each git commit. Using fromJson() deserialization, it dynamically feeds a custom, downscaled array directly into the worker matrix runner.
+The Solution: An upstream inspect_changes job calculates the precise structural delta of each git commit. Using fromJson() deserialization, it dynamically feeds a custom, downscaled array directly into the worker matrix runner.
 
 Impact: Reduces unnecessary compute runtime overhead by up to 80%, flattening development queues and lowering cloud infrastructure costs.
 3. Supply Chain Security & Attestation
