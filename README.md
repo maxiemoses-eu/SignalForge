@@ -1,5 +1,4 @@
-# SignalForge
-Security as a code project
+# SignalForge: Security as a code project
 
 ---
 
