@@ -10,25 +10,54 @@ This project is designed not only to sell products, but to **generate high-fidel
 
 ---
 
-## GitOps Multi-Repository Deployment Pipeline
+#```mermaid
+flowchart TB
 
-```mermaid
-graph TD
-    classDef repo fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#000;
-    classDef registry fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#b71c1c;
-    classDef cluster fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b;
-    classDef gitops fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c;
+    %% ==================================
+    %% REPOSITORIES
+    %% ==================================
 
-    AppRepo["📁 1. APP REPO<br>(Microservices & UI)"]:::repo
-    ACR["📦 Azure Container Registry<br>(ACR)"]:::registry
-    IaCRepo["📁 2. IaC REPO<br>(Terraform)"]:::repo
-    AKS["☸️ Azure Kubernetes Service<br>(AKS Cluster)"]:::cluster
-    GitOpsRepo["📁 3. GITOPS REPO<br>(Manifests / Helm)"]:::gitops
+    APP["1️⃣ Application Repository<br/>Microservices & Frontend"]:::app
 
-    AppRepo-->|CI Pipeline: Test, Scan & Build|ACR
-    IaCRepo-->|Terraform Apply: Provision Cluster|AKS
-    GitOpsRepo-->|Argo CD ApplicationSet: Dynamic Sync|AKS
-    ACR-.->|Pulls Secure Images|AKS
+    IAC["2️⃣ Infrastructure Repository<br/>Terraform Modules"]:::iac
+
+    GITOPS["3️⃣ GitOps Repository<br/>Helm Charts / Kustomize<br/>Kubernetes Manifests"]:::gitops
+
+    %% ==================================
+    %% PLATFORM COMPONENTS
+    %% ==================================
+
+    ACR["Azure Container Registry (ACR)"]:::registry
+
+    AKS["Azure Kubernetes Service (AKS)"]:::platform
+
+    %% ==================================
+    %% DEPLOYMENT FLOW
+    %% ==================================
+
+    APP -->|"CI Pipeline<br/>• Tests<br/>• Security Scans<br/>• Build Docker Image<br/>• Push Image"| ACR
+
+    IAC -->|"Terraform Apply<br/>Provisions Infrastructure"| AKS
+
+    ACR -->|"Pull Container Images"| AKS
+
+    GITOPS -->|"GitOps Sync<br/>Desired State Reconciliation"| AKS
+
+    %% ==================================
+    %% STYLING
+    %% ==================================
+
+    classDef app fill:#E3F2FD,stroke:#1565C0,stroke-width:3px,color:#0D47A1;
+    classDef registry fill:#FFF3E0,stroke:#EF6C00,stroke-width:3px,color:#E65100;
+    classDef platform fill:#E8F5E9,stroke:#2E7D32,stroke-width:3px,color:#1B5E20;
+    classDef gitops fill:#F3E5F5,stroke:#7B1FA2,stroke-width:3px,color:#4A148C;
+    classDef iac fill:#FFEBEE,stroke:#C62828,stroke-width:3px,color:#B71C1C;
+
+    linkStyle 0 stroke:#1565C0,stroke-width:2px;
+    linkStyle 1 stroke:#C62828,stroke-width:2px;
+    linkStyle 2 stroke:#EF6C00,stroke-width:2px;
+    linkStyle 3 stroke:#7B1FA2,stroke-width:2px;
+```
 
 Each service:
 
