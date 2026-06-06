@@ -2,12 +2,9 @@
 
 ---
 
-A **production-ready, security-hardened e-commerce platform** built with multiple microservices, a React UI, and telemetry-first design principles.
-This project is designed not only to sell products, but to **generate high-fidelity security and operational signals** for detection engineering and SOC workflows.
-
 ## 🛠️ Enterprise DevSecOps & FinOps Summary
 
-This project is built using a **3-Repository Enterprise Topology** (App, IaC, and GitOps) deployed on **Microsoft Azure (AKS/ACR)**. The delivery infrastructure is engineered to solve real-world cloud scaling, cost, and security bottlenecks.
+This project is a production-ready, security-hardened platform built with multiple microservices, and telemetry-first design principles. This project is built using a **3-Repository Enterprise Topology** (App, IaC, and GitOps) deployed on **Microsoft Azure (AKS/ACR)**. The delivery infrastructure is engineered to solve real-world cloud scaling, cost, and security bottlenecks. This project is designed to **generate high-fidelity security and operational signals** for detection engineering and SOC workflows.
 
 ## Project Repo Structure
 
