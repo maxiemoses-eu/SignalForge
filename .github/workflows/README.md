@@ -64,8 +64,24 @@ An upstream inspect_changes job calculates the precise structural delta of each 
 ## Impact: 
 **Reduces unnecessary compute runtime overhead by up to 80%,** flattening development queues and lowering cloud infrastructure costs.
 
-# Supply Chain Security & Attestation
+## Application SAST, Supply Chain Security & Attestation
 
-Every compiled image pushed to the Azure Container Registry (ACR) undergoes local Trivy Vulnerability Scans pinned to a verified immutable commit SHA to protect the build environment.
+This architecture implements a strict multi-layered security verification sequence before code artifacts ever reach production. 
 
-Upon passing, images are bundled with an automated **Software Bill of Materials (SBOM)** and Provenance Attestations directly into the build execution payload. This provides our downstream Argo CD and Azure Kubernetes Service (AKS) admission controllers an unbreakable cryptographic receipt verifying the image originated cleanly from this exact workflow tree.
+### A. Static Application Security Testing (SAST) via SonarQube
+In **Stage 1**, running parallel to the integration tests, a dedicated **SonarQube Analysis Gate** intercepts the developer's source code. 
+* By enforcing full git history checkout (`fetch-depth: 0`), the runner scans for code smells, technical debt, and zero-day source-level vulnerabilities (such as SQL injections, XSS vulnerabilities, or hardcoded API credentials) directly on the active commit delta.
+* Pull requests are automatically blocked if they fail to meet the required code quality and security thresholds.
+
+### B. Container Image Vulnerability Scanning via Trivy
+Once the microservice images are compiled inside the Docker Buildx daemon, they drop into **Stage 2** for an infrastructure layer check. The pipeline triggers an automated **Trivy Diagnostics Scan** to catch operating system vulnerabilities and malicious open-source packages.
+
+> [!IMPORTANT]
+> **Supply Chain Hardening:** Adhering to the recent CISA and NIST advisories regarding the *TeamPCP supply chain compromises (CVE-2026-33634)*, all downstream GitHub Actions—including the Trivy scanner itself—are pinned to **absolute, immutable cryptographic git commit SHAs** rather than mutable release tags. This eliminates the risk of upstream tag-poisoning and credential-harvesting exploits.
+
+### C. Cryptographic Provenance and SBOM Generation
+Upon completing all validation sequences, clean images are pushed to the **Azure Container Registry (ACR)** accompanied by:
+1. **An Automated Software Bill of Materials (SBOM):** A machine-readable, nested inventory detailing every single dependency inside the container.
+2. **In-Toto Provenance Attestations:** A cryptographically signed digital footprint proving exactly *where, when, and how* the container was built.
+
+**The Business Impact:** This creates an unbreakable chain of custody. Downstream **Argo CD** engine loops and **Azure Kubernetes Service (AKS)** admission controllers evaluate these signatures at runtime, rejecting unauthorized, unsigned third-party container injections instantly.
