@@ -8,7 +8,7 @@ Security as a code project
 A **production-ready, security-hardened e-commerce platform** built with multiple microservices, a React UI, and telemetry-first design principles.
 This project is designed not only to sell products, but to **generate high-fidelity security and operational signals** for detection engineering and SOC workflows.
 
----
+# Project Repo Structure
 
 ```mermaid
 flowchart TB
