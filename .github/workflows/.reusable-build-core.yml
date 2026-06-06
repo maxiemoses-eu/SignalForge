@@ -9,18 +9,17 @@ on:
 
 jobs:
   execute_pipeline_core:
-    runs-on: ubuntu-24.04 # FIXED: Pinned to an immutable runner image distribution target
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write       
       contents: read        
       security-events: write 
     steps:
       - name: Hardened Repository Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0 
 
-      # FIXED: Swapped multiline marker from folded (>) to literal block scalar (|) to avoid argument corruption
       - name: SonarQube Source Code Analytics
         uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
         with:
@@ -38,7 +37,6 @@ jobs:
       - name: Set up Docker Buildx Context
         uses: docker/setup-buildx-action@f95db14fdd7910d21350268e4de0e75d5c2d66ee # v3.0.0
 
-      # FIXED: Map vulnerable dynamic runner targets cleanly to intermediate environment primitives
       - name: Set Automated Version Tag
         env:
           GH_REF_TYPE: ${{ github.ref_type }}
@@ -46,13 +44,14 @@ jobs:
           GH_SHA: ${{ github.sha }}
         run: |
           if [ "${GH_REF_TYPE}" = "tag" ]; then
-            echo "VERSION_TAG=${GH_REF_NAME}" >> $GITHUB_ENV
+            CLEAN_TAG=$(echo "${GH_REF_NAME}" | sed 's/[^a-zA-Z0-9_.-]/_/g')
+            echo "VERSION_TAG=${CLEAN_TAG}" >> $GITHUB_ENV
           else
-            echo "VERSION_TAG=dev-${GH_SHA}" >> $GITHUB_ENV
+            echo "VERSION_TAG=build-${GH_SHA:0:7}" >> $GITHUB_ENV
           fi
 
       - name: OIDC Identity Federated Login to Microsoft Azure
-        uses: azure/login@6b245a7d50020d1e931d261be2450415307feed1 # FIXED: Pinned to immutable cryptographic SHA hash
+        uses: azure/login@6b245a7d50020d1e931d261be2450415307feed1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -61,11 +60,10 @@ jobs:
       - name: Authenticate to Azure Container Registry (ACR)
         run: az acr login --name ${{ secrets.AZURE_REGISTRY_NAME }}
 
-      # FIXED: Aligned context to project directory target scopes
       - name: Build Local Container Layer
         uses: docker/build-push-action@2cdde22fde133043114e72c1d5a6a018ac93433a # v5.3.0
         with:
-          context: ./${{ inputs.service_name }}
+          context: .
           file: ./${{ inputs.service_name }}/Dockerfile
           load: true 
           platforms: linux/amd64
@@ -73,9 +71,8 @@ jobs:
           cache-from: type=gha,scope=${{ inputs.service_name }}
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
 
-      # FIXED: Remediated CVE-2026-33634 infostealer pin with an official patched release and added missing scan-type config
       - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@v0.36.0 # v0.36.0
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400e26442d6d451fe4fad3a20 # Pinned to safe v0.35.0 post-CVE-2026-33634
         with:
           scan-type: 'image'
           image-ref: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
@@ -85,11 +82,10 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
-      # FIXED: Added cache-to directive to persist multi-architecture layers effectively
       - name: Push Verified Container & Generate Cryptographic Attestations
         uses: docker/build-push-action@2cdde22fde133043114e72c1d5a6a018ac93433a # v5.3.0
         with:
-          context: ./${{ inputs.service_name }}
+          context: .
           file: ./${{ inputs.service_name }}/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
@@ -97,7 +93,6 @@ jobs:
           provenance: true  
           tags: |
             ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
-            ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ github.sha }}
-            ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:latest
+            ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:sha-${{ github.sha }}
           cache-from: type=gha,scope=${{ inputs.service_name }}
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
