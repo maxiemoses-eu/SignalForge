@@ -12,29 +12,33 @@ To completely eliminate the risk of long-lived, static secret exposure (such as 
 ### Cryptographic Identity Exchange Workflow
 
 ```mermaid
-flowchart LR
+flowchart TB
 
-    Runner["GitHub Actions<br/>Runner"]
+    Runner["GitHub Actions Runner"]
 
-    OIDC["GitHub OIDC<br/>Provider"]
+    OIDC["GitHub OIDC<br/>Identity Provider"]
 
-    Entra["Microsoft Entra ID<br/>Federated Credential"]
+    Entra["Microsoft Entra ID"]
 
-    Azure["Azure Subscription<br/>ACR / AKS / Resources"]
+    Azure["Azure Cloud Environment"]
 
-    Runner -->|"1. Request JWT"| OIDC
+    Runner -->|"1. Request OIDC JWT"| OIDC
 
-    OIDC -->|"2. Signed JWT"| Runner
+    OIDC -->|"2. Return Signed OIDC JWT"| Runner
 
-    Runner -->|"3. Exchange JWT"| Entra
+    Runner -->|"3. Exchange JWT for Access Token"| Entra
 
-    Entra -->|"4. Short-Lived Access Token"| Azure
+    Entra -->|"Validates:<br/>Issuer = github.com<br/>Subject = repo:org/name"| Entra
 
-    classDef github fill:#24292e,color:#fff,stroke:#24292e,stroke-width:2px;
-    classDef azure fill:#0078D4,color:#fff,stroke:#005A9E,stroke-width:2px;
-    classDef resource fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px;
+    Entra -->|"4. Issue Temporary OAuth2 Token<br/>(~1 Hour Lifetime)"| Azure
+
+    Azure -->|"Pipeline Task:<br/>ACR Push / AKS Deploy"| Azure
+
+    classDef github fill:#24292e,color:#ffffff,stroke:#24292e,stroke-width:2px;
+    classDef identity fill:#0078D4,color:#ffffff,stroke:#005A9E,stroke-width:2px;
+    classDef azure fill:#E8F5E9,color:#000000,stroke:#2E7D32,stroke-width:2px;
 
     class Runner,OIDC github;
-    class Entra azure;
-    class Azure resource;
+    class Entra identity;
+    class Azure azure;
 ```
