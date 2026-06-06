@@ -48,10 +48,10 @@ The runner requests a cryptographically signed JSON Web Token (JWT) directly fro
 ## Federated Validation: 
 The token is forwarded to Microsoft Entra ID, which cross-references the token's claims against our pre-configured infrastructure trust relationships.
 
-##  Short-Lived Authorization: 
+## Short-Lived Authorization: 
 Upon validation, Entra ID mints a scoped, ephemeral OAuth2 access token valid for exactly 60 minutes. **No static credentials touch disk, runner state memory, or logs.**
 
-# Dynamic Component Isolation (Cost Optimization)
+## Dynamic Component Isolation (Cost Optimization)
 
 *To optimize compute consumption and minimize GitHub Enterprise runner bills, this pipeline implements Asynchronous Path-Filtering Gates.
 
