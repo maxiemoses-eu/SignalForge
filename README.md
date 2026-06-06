@@ -3,8 +3,6 @@ Security as a code project
 
 ---
 
-# 🛒 SignalForge E-Commerce Microservices Platform
-
 A **production-ready, security-hardened e-commerce platform** built with multiple microservices, a React UI, and telemetry-first design principles.
 This project is designed not only to sell products, but to **generate high-fidelity security and operational signals** for detection engineering and SOC workflows.
 
@@ -12,17 +10,7 @@ This project is designed not only to sell products, but to **generate high-fidel
 
 This project is built using a **3-Repository Enterprise Topology** (App, IaC, and GitOps) deployed on **Microsoft Azure (AKS/ACR)**. The delivery infrastructure is engineered to solve real-world cloud scaling, cost, and security bottlenecks.
 
-### 📊 Business & Infrastructure Metrics
-
-| Engineering Focus | The Legacy Problem | My Hardened Solution | Business Impact |
-| :--- | :--- | :--- | :--- |
-| **Cloud Cost (FinOps)** | Typos or single-service edits trigger redundant builds across all 6 microservices ("Ghost Runs"). | **Dynamic Path-Filtering Gates** compute exact code deltas to target micro-matrix threads. | **80% reduction** in GitHub Actions runner billing minutes. |
-| **Identity & Access** | Hardcoded Azure Service Principal Client Secrets stored in repository configurations. | **Workload Identity Federation (OIDC)** using ephemeral JSON Web Tokens. | **Zero Static Secrets.** Completely immunizes pipeline against credential leaks. |
-| **Supply Chain** | Vulnerable base images or rogue container injections bypassing registry verification layers. | **Shift-Left Trivy Diagnostics** + Cryptographic **SBOM / Provenance Attestations**. | **Zero-Trust Validation.** AKS admission controllers reject unsigned container injections. |
-
-👉 *For the deep-dive technical diagrams, OIDC token exchange breakdown, and configuration mechanics, see the [Advanced Workflow Security Documentation](.github/workflows/README.md).*
-
-# Project Repo Structure
+## Project Repo Structure
 
 ```mermaid
 flowchart TB
@@ -66,6 +54,16 @@ Each service:
 * Emits signals suitable for **SignalForge ingestion**
 
 ---
+
+## 📊 Business & Infrastructure Metrics
+
+| Engineering Focus | The Legacy Problem | My Hardened Solution | Business Impact |
+| :--- | :--- | :--- | :--- |
+| **Cloud Cost (FinOps)** | Typos or single-service edits trigger redundant builds across all 6 microservices ("Ghost Runs"). | **Dynamic Path-Filtering Gates** compute exact code deltas to target micro-matrix threads. | **80% reduction** in GitHub Actions runner billing minutes. |
+| **Identity & Access** | Hardcoded Azure Service Principal Client Secrets stored in repository configurations. | **Workload Identity Federation (OIDC)** using ephemeral JSON Web Tokens. | **Zero Static Secrets.** Completely immunizes pipeline against credential leaks. |
+| **Supply Chain** | Vulnerable base images or rogue container injections bypassing registry verification layers. | **Shift-Left Trivy Diagnostics** + Cryptographic **SBOM / Provenance Attestations**. | **Zero-Trust Validation.** AKS admission controllers reject unsigned container injections. |
+
+👉 *For the deep-dive technical diagrams, OIDC token exchange breakdown, and configuration mechanics, see the [Advanced Workflow Security Documentation](.github/workflows/README.md).*
 
 ## 🔧 Tech Stack
 
