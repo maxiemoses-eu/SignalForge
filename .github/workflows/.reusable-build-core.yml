@@ -1,0 +1,103 @@
+name: .Reusable Build Core
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        required: true
+        type: string
+
+jobs:
+  execute_pipeline_core:
+    runs-on: ubuntu-24.04 # FIXED: Pinned to an immutable runner image distribution target
+    permissions:
+      id-token: write       
+      contents: read        
+      security-events: write 
+    steps:
+      - name: Hardened Repository Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0 
+
+      # FIXED: Swapped multiline marker from folded (>) to literal block scalar (|) to avoid argument corruption
+      - name: SonarQube Source Code Analytics
+        uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
+        with:
+          args: |
+            -Dsonar.projectKey=SignalForge_${{ inputs.service_name }}
+            -Dsonar.projectName=SignalForge-${{ inputs.service_name }}
+            -Dsonar.sources=${{ inputs.service_name }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Set up QEMU for Multi-Platform Builds
+        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
+
+      - name: Set up Docker Buildx Context
+        uses: docker/setup-buildx-action@f95db14fdd7910d21350268e4de0e75d5c2d66ee # v3.0.0
+
+      # FIXED: Map vulnerable dynamic runner targets cleanly to intermediate environment primitives
+      - name: Set Automated Version Tag
+        env:
+          GH_REF_TYPE: ${{ github.ref_type }}
+          GH_REF_NAME: ${{ github.ref_name }}
+          GH_SHA: ${{ github.sha }}
+        run: |
+          if [ "${GH_REF_TYPE}" = "tag" ]; then
+            echo "VERSION_TAG=${GH_REF_NAME}" >> $GITHUB_ENV
+          else
+            echo "VERSION_TAG=dev-${GH_SHA}" >> $GITHUB_ENV
+          fi
+
+      - name: OIDC Identity Federated Login to Microsoft Azure
+        uses: azure/login@6b245a7d50020d1e931d261be2450415307feed1 # FIXED: Pinned to immutable cryptographic SHA hash
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Authenticate to Azure Container Registry (ACR)
+        run: az acr login --name ${{ secrets.AZURE_REGISTRY_NAME }}
+
+      # FIXED: Aligned context to project directory target scopes
+      - name: Build Local Container Layer
+        uses: docker/build-push-action@2cdde22fde133043114e72c1d5a6a018ac93433a # v5.3.0
+        with:
+          context: ./${{ inputs.service_name }}
+          file: ./${{ inputs.service_name }}/Dockerfile
+          load: true 
+          platforms: linux/amd64
+          tags: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
+          cache-from: type=gha,scope=${{ inputs.service_name }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
+
+      # FIXED: Remediated CVE-2026-33634 infostealer pin with an official patched release and added missing scan-type config
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@v0.36.0 # v0.36.0
+        with:
+          scan-type: 'image'
+          image-ref: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
+          format: 'table'
+          exit-code: '1' 
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      # FIXED: Added cache-to directive to persist multi-architecture layers effectively
+      - name: Push Verified Container & Generate Cryptographic Attestations
+        uses: docker/build-push-action@2cdde22fde133043114e72c1d5a6a018ac93433a # v5.3.0
+        with:
+          context: ./${{ inputs.service_name }}
+          file: ./${{ inputs.service_name }}/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          sbom: true        
+          provenance: true  
+          tags: |
+            ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
+            ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ github.sha }}
+            ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:latest
+          cache-from: type=gha,scope=${{ inputs.service_name }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}

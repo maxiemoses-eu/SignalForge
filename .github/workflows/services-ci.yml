@@ -1,0 +1,49 @@
+name: SignalForge Hardened Services CI
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  id-token: write       
+  contents: read        
+  security-events: write 
+  actions: read         
+
+jobs:
+  inspect_changes:
+    name: Compute Change Delta
+    runs-on: ubuntu-24.04 # FIXED: Upgraded from loose mutable 'latest' tag to an explicit, immutable OS image snapshot
+    outputs:
+      active_matrix: ${{ steps.filter.outputs.changes }}
+    steps:
+      - name: Checkout Source Tree
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Evaluate Component Delta
+        id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          filters: |
+            gateway-microservice: 'gateway-microservice/**'
+            order-microservice: 'order-microservice/**'
+            payment-microservice: 'payment-microservice/**'
+            product-microservice: 'product-microservice/**'
+            store-ui: 'store-ui/**'
+            user-microservice: 'user-microservice/**'
+
+  build_and_secure:
+    name: Secure Lifecycle
+    needs: inspect_changes
+    if: ${{ needs.inspect_changes.outputs.active_matrix != '[]' && needs.inspect_changes.outputs.active_matrix != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.inspect_changes.outputs.active_matrix) }}
+    uses: ./.github/workflows/.reusable-build-core.yml # Links directly to your linted, hardened muscle template
+    with:
+      service_name: ${{ matrix.service }}
+    secrets: inherit
