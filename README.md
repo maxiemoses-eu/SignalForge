@@ -10,53 +10,36 @@ This project is designed not only to sell products, but to **generate high-fidel
 
 ---
 
-#```mermaid
+```mermaid
 flowchart TB
 
-    %% ==================================
-    %% REPOSITORIES
-    %% ==================================
+    APP["Application Repository<br/>Microservices & Frontend"]
+    IAC["Infrastructure Repository<br/>Terraform Modules"]
+    GITOPS["GitOps Repository<br/>Helm Charts / Kustomize<br/>Kubernetes Manifests"]
 
-    APP["1️⃣ Application Repository<br/>Microservices & Frontend"]:::app
+    ACR["Azure Container Registry (ACR)"]
 
-    IAC["2️⃣ Infrastructure Repository<br/>Terraform Modules"]:::iac
+    AKS["Azure Kubernetes Service (AKS)"]
 
-    GITOPS["3️⃣ GitOps Repository<br/>Helm Charts / Kustomize<br/>Kubernetes Manifests"]:::gitops
+    APP -->|"CI Pipeline<br/>Tests, Security Scans,<br/>Build & Push Docker Image"| ACR
 
-    %% ==================================
-    %% PLATFORM COMPONENTS
-    %% ==================================
-
-    ACR["Azure Container Registry (ACR)"]:::registry
-
-    AKS["Azure Kubernetes Service (AKS)"]:::platform
-
-    %% ==================================
-    %% DEPLOYMENT FLOW
-    %% ==================================
-
-    APP -->|"CI Pipeline<br/>• Tests<br/>• Security Scans<br/>• Build Docker Image<br/>• Push Image"| ACR
-
-    IAC -->|"Terraform Apply<br/>Provisions Infrastructure"| AKS
+    IAC -->|"Terraform Apply<br/>Infrastructure Provisioning"| AKS
 
     ACR -->|"Pull Container Images"| AKS
 
-    GITOPS -->|"GitOps Sync<br/>Desired State Reconciliation"| AKS
+    GITOPS -->|"GitOps Synchronization<br/>Desired State Reconciliation"| AKS
 
-    %% ==================================
-    %% STYLING
-    %% ==================================
+    classDef app fill:#E3F2FD,stroke:#1565C0,stroke-width:2px;
+    classDef iac fill:#FFEBEE,stroke:#C62828,stroke-width:2px;
+    classDef registry fill:#FFF3E0,stroke:#EF6C00,stroke-width:2px;
+    classDef platform fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px;
+    classDef gitops fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px;
 
-    classDef app fill:#E3F2FD,stroke:#1565C0,stroke-width:3px,color:#0D47A1;
-    classDef registry fill:#FFF3E0,stroke:#EF6C00,stroke-width:3px,color:#E65100;
-    classDef platform fill:#E8F5E9,stroke:#2E7D32,stroke-width:3px,color:#1B5E20;
-    classDef gitops fill:#F3E5F5,stroke:#7B1FA2,stroke-width:3px,color:#4A148C;
-    classDef iac fill:#FFEBEE,stroke:#C62828,stroke-width:3px,color:#B71C1C;
-
-    linkStyle 0 stroke:#1565C0,stroke-width:2px;
-    linkStyle 1 stroke:#C62828,stroke-width:2px;
-    linkStyle 2 stroke:#EF6C00,stroke-width:2px;
-    linkStyle 3 stroke:#7B1FA2,stroke-width:2px;
+    class APP app;
+    class IAC iac;
+    class ACR registry;
+    class AKS platform;
+    class GITOPS gitops;
 ```
 
 Each service:
