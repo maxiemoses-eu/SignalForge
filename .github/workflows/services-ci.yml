@@ -6,7 +6,7 @@ on:
     tags: [ 'v*.*.*' ]
   pull_request:
     branches: [ "main" ]
-  
+
   workflow_dispatch:
     inputs:
       manual_service:
@@ -24,10 +24,10 @@ on:
           - user-microservice
 
 permissions:
-  id-token: write       
-  contents: read        
-  security-events: write 
-  actions: read         
+  id-token: write
+  contents: read
+  security-events: write
+  actions: read
 
 jobs:
   inspect_changes:
@@ -36,9 +36,10 @@ jobs:
     outputs:
       active_matrix: ${{ steps.compute_targets.outputs.active_matrix }}
     steps:
-      - name: Checkout Source Tree
-        if: ${{ github.event_name != 'workflow_dispatch' }}
+      - name: Hardened Repository Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
 
       - name: Evaluate Component Delta
         if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -46,12 +47,18 @@ jobs:
         uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         with:
           filters: |
-            gateway-microservice: 'gateway-microservice/**'
-            order-microservice: 'order-microservice/**'
-            payment-microservice: 'payment-microservice/**'
-            product-microservice: 'product-microservice/**'
-            store-ui: 'store-ui/**'
-            user-microservice: 'user-microservice/**'
+            gateway-microservice:
+              - 'gateway-microservice/**'
+            order-microservice:
+              - 'order-microservice/**'
+            payment-microservice:
+              - 'payment-microservice/**'
+            product-microservice:
+              - 'product-microservice/**'
+            store-ui:
+              - 'store-ui/**'
+            user-microservice:
+              - 'user-microservice/**'
 
       - name: Compute Execution Target Matrix Array
         id: compute_targets
@@ -67,7 +74,7 @@ jobs:
           fi
 
   build_and_secure:
-    name: Secure Lifecycle
+    name: Secure Lifecycle — ${{ matrix.service }}
     needs: inspect_changes
     if: ${{ needs.inspect_changes.outputs.active_matrix != '[]' && needs.inspect_changes.outputs.active_matrix != '' }}
     strategy:
