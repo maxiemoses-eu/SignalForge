@@ -47,15 +47,15 @@ jobs:
           dockerfile: ./${{ inputs.service_name }}/Dockerfile
           failure-threshold: warning
 
-      - name: Set up Java 17
+      - name: Set up Java 21
         if: ${{ inputs.service_name == 'order-microservice' }}
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Set up Node.js 20
-        if: ${{ inputs.service_name == 'product-microservice' || inputs.service_name == 'gateway-microservice' }}
+        if: ${{ inputs.service_name == 'product-microservice' || inputs.service_name == 'gateway-microservice' || inputs.service_name == 'store-ui' }}
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -66,7 +66,7 @@ jobs:
         run: |
           case "${{ inputs.service_name }}" in
 
-            store-ui|user-microservice)
+            user-microservice)
               echo "Running Python checks for ${{ inputs.service_name }}..."
               cd ${{ inputs.service_name }}
               pip install --break-system-packages -r requirements.txt
@@ -77,7 +77,7 @@ jobs:
               fi
               ;;
 
-            product-microservice|gateway-microservice)
+            store-ui|product-microservice|gateway-microservice)
               echo "Running Node.js checks for ${{ inputs.service_name }}..."
               cd ${{ inputs.service_name }}
               npm ci
@@ -150,17 +150,6 @@ jobs:
             ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:sha-${{ github.sha }}
           cache-from: type=gha,scope=${{ inputs.service_name }}
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
-
-      - name: Update ArgoCD GitOps Manifest
-        run: |
-          git clone https://x-access-token:${{ secrets.GITOPS_PAT }}@github.com/maxiemoses-eu/SignalForge-ArgoCD.git
-          cd SignalForge-ArgoCD
-          sed -i 's|tag:.*|tag: ${{ env.VERSION_TAG }}|' helm-values/${{ inputs.service_name }}.yaml
-          git config user.email "ci@signalforge.dev"
-          git config user.name "SignalForge CI"
-          git add .
-          git diff --staged --quiet && echo "No manifest changes, skipping commit" || \
-            (git commit -m "ci: update ${{ inputs.service_name }} to ${{ env.VERSION_TAG }}" && git push)
 
       - name: Notify on Failure
         if: failure()

@@ -14,6 +14,18 @@ RUN mvn package -DskipTests
 # Use a smaller JRE image for the final container
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
+
+# Add a non-root user
+RUN addgroup -S signalforge && adduser -S spring -G signalforge
+
+# Patch base image to reduce Trivy findings
+RUN apk update && apk upgrade --no-cache
+
 COPY --from=build /app/target/*.jar app.jar
+# Change ownership to the non-root user
+RUN chown spring:signalforge app.jar
+
+# Switch to non-root user
+USER spring
 EXPOSE 1001
 ENTRYPOINT ["java", "-jar", "app.jar"]

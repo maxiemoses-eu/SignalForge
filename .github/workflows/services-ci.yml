@@ -85,3 +85,44 @@ jobs:
     with:
       service_name: ${{ matrix.service }}
     secrets: inherit
+
+  update_gitops:
+    name: Update GitOps Manifests
+    needs: build_and_secure
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout GitOps Repo
+        uses: actions/checkout@v4
+        with:
+          repository: maxiemoses-eu/SignalForge-ArgoCD
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops-repo
+
+      - name: Install yq
+        run: |
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+          sudo chmod +x /usr/bin/yq
+
+      - name: Update Manifests
+        env:
+          ACTIVE_MATRIX: ${{ needs.inspect_changes.outputs.active_matrix }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          cd gitops-repo
+          # Use a generated version tag consistent with the build job
+          VERSION_TAG="build-${GITHUB_SHA:0:7}"
+          
+          echo "Updating manifests for: $ACTIVE_MATRIX"
+          
+          # Simple parser to iterate through the JSON array
+          for service in $(echo $ACTIVE_MATRIX | jq -r '.[]'); do
+            echo "Updating $service to $VERSION_TAG"
+            # Using yq is safer than sed
+            yq -i ".image.tag = \"$VERSION_TAG\"" "helm-values/$service.yaml"
+          done
+          
+          git config user.email "ci@signalforge.dev"
+          git config user.name "SignalForge CI"
+          git add .
+          git diff --staged --quiet && echo "No manifest changes, skipping commit" || \
+            (git commit -m "ci: update services to $VERSION_TAG" && git push)

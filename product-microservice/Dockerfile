@@ -5,6 +5,8 @@ COPY package*.json ./
 # Clean install including dev deps for testing
 RUN npm ci 
 COPY . .
+# Prune devDependencies for production
+RUN npm prune --production
 
 # Stage 2: Production (Hardened)
 FROM node:22-alpine3.21

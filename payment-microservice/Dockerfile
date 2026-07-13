@@ -8,11 +8,12 @@ RUN go mod download
 
 COPY . .
 
-# Build static binary for scratch
+# Build static binary
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
-# Final stage: minimal runtime environment
-FROM scratch
+# Final stage: hardened but debuggable runtime environment
+FROM gcr.io/distroless/static-debian12
 COPY --from=build /app/main /main
 EXPOSE 5003
+USER nonroot:nonroot
 ENTRYPOINT ["/main"]
