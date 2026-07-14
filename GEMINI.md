@@ -15,6 +15,9 @@ This repository contains the application source code for the SignalForge microse
 - Infrastructure provisioning logic resides in the `SignalForge-AzureInfra` repository.
 - Deployment and environment-specific configuration resides in the `SignalForge-Argocd-2` repository.
 
+## Security Hardening
+- For detailed information on the security hardening standards and the current status of all microservices, see [SECURITY_HARDENING.md](./SECURITY_HARDENING.md).
+
 ---
 
 ## Agent Operational Guardrails
