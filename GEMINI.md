@@ -12,5 +12,11 @@
 
 ## Repository Scope
 This repository contains the application source code for the SignalForge microservices and frontend. 
-- Infrastructure provisioning logic resides in the `SignalForge-IaC` repository.
-- Deployment and environment-specific configuration resides in the `SignalForge-GitOps` repository.
+- Infrastructure provisioning logic resides in the `SignalForge-AzureInfra` repository.
+- Deployment and environment-specific configuration resides in the `SignalForge-Argocd-2` repository.
+
+---
+
+## Agent Operational Guardrails
+- **Targeted Directory Scanning**: Before using the `codebase_investigator` or running file searches, locate files matching the target microservice first. Do not scan the entire root directory recursively unless explicitly requested.
+- **Quota Management**: Prioritize lightweight, specific tools. If a task requires scanning multiple files, list the candidate files to the user first before reading them to avoid hitting API rate limits.

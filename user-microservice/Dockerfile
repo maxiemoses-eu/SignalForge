@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Patch OS-level vulnerabilities
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 RUN adduser --disabled-password appuser
 WORKDIR /app
 
