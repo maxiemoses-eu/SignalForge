@@ -28,6 +28,7 @@ permissions:
   contents: read
   security-events: write
   actions: read
+  packages: write
 
 jobs:
   inspect_changes:
