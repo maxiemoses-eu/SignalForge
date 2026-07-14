@@ -22,8 +22,13 @@ These strategies are the verified standards for maintaining the security posture
 - **Transitive Vulnerability Override**: If a secure version of a library is not pulled in automatically, use explicit overrides (e.g., Maven `dependencyManagement` or direct `npm install` pinning) to force the use of patched versions.
 - **Vulnerability Lifecycle**: All services must achieve a "clean" status (0 vulnerabilities) via `trivy` scanning before being considered production-ready.
 
-### 3. Verification
-- **Continuous Security Testing**: The CI/CD pipeline enforces these standards by running `trivy` scans against both the source code and the final container image.
+## Maintenance Policy
+
+To ensure our security posture remains transparent and accurate, the following "Documentation-as-Code" policy is mandatory:
+
+- **Definition of Done (DoD)**: No Pull Request that includes security remediation, dependency updates, or container hardening is considered complete unless this document (`SECURITY_HARDENING.md`) is updated to reflect the changes.
+- **Verification**: Pipeline verification (Trivy scans) must be updated and re-verified for any service modified in a Pull Request.
+- **Auditability**: All changes made to this document must correspond to specific commits in the Git history, ensuring a clear audit trail for compliance and review.
 
 
 ## Status Summary
