@@ -1,0 +1,128 @@
+name: SignalForge Hardened Services CI (GHCR)
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ "main" ]
+
+  workflow_dispatch:
+    inputs:
+      manual_service:
+        description: 'Select a Microservice to manually compile & deploy:'
+        required: true
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - gateway-microservice
+          - order-microservice
+          - payment-microservice
+          - product-microservice
+          - store-ui
+          - user-microservice
+
+permissions:
+  id-token: write
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  inspect_changes:
+    name: Compute Change Delta
+    runs-on: ubuntu-24.04
+    outputs:
+      active_matrix: ${{ steps.compute_targets.outputs.active_matrix }}
+    steps:
+      - name: Hardened Repository Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Evaluate Component Delta
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          filters: |
+            gateway-microservice:
+              - 'gateway-microservice/**'
+            order-microservice:
+              - 'order-microservice/**'
+            payment-microservice:
+              - 'payment-microservice/**'
+            product-microservice:
+              - 'product-microservice/**'
+            store-ui:
+              - 'store-ui/**'
+            user-microservice:
+              - 'user-microservice/**'
+
+      - name: Compute Execution Target Matrix Array
+        id: compute_targets
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.manual_service }}" = "all" ]; then
+              echo 'active_matrix=["gateway-microservice", "order-microservice", "payment-microservice", "product-microservice", "store-ui", "user-microservice"]' >> $GITHUB_OUTPUT
+            else
+              echo 'active_matrix=["${{ inputs.manual_service }}"]' >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "active_matrix=${{ steps.filter.outputs.changes }}" >> $GITHUB_OUTPUT
+          fi
+
+  build_and_secure:
+    name: Secure Lifecycle — ${{ matrix.service }}
+    needs: inspect_changes
+    if: ${{ needs.inspect_changes.outputs.active_matrix != '[]' && needs.inspect_changes.outputs.active_matrix != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.inspect_changes.outputs.active_matrix) }}
+    uses: ./.github/workflows/.reusable-build-core-ghcr.yml
+    with:
+      service_name: ${{ matrix.service }}
+    secrets: inherit
+
+  update_gitops:
+    name: Update GitOps Manifests
+    needs: build_and_secure
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout GitOps Repo
+        uses: actions/checkout@v4
+        with:
+          repository: maxiemoses-eu/SignalForge-ArgoCD
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops-repo
+
+      - name: Install yq
+        run: |
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+          sudo chmod +x /usr/bin/yq
+
+      - name: Update Manifests
+        env:
+          ACTIVE_MATRIX: ${{ needs.inspect_changes.outputs.active_matrix }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          cd gitops-repo
+          # Use a generated version tag consistent with the build job
+          VERSION_TAG="build-${GITHUB_SHA:0:7}"
+          
+          echo "Updating manifests for: $ACTIVE_MATRIX"
+          
+          # Simple parser to iterate through the JSON array
+          for service in $(echo $ACTIVE_MATRIX | jq -r '.[]'); do
+            echo "Updating $service to $VERSION_TAG"
+            # Using yq is safer than sed
+            yq -i ".image.tag = \"$VERSION_TAG\"" "helm-values/$service.yaml"
+          done
+          
+          git config user.email "ci@signalforge.dev"
+          git config user.name "SignalForge CI"
+          git add .
+          git diff --staged --quiet && echo "No manifest changes, skipping commit" || \
+            (git commit -m "ci: update services to $VERSION_TAG" && git push)
