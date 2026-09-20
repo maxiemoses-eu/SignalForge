@@ -43,11 +43,14 @@ jobs:
           fi
           echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
+      - name: Debug Service Name
+        run: echo "Service Name is '${{ inputs.service_name }}'"
+
       - name: Lint Dockerfile
-        # Cache-busting comment: v3.1.0-refresh
+        # Cache-busting comment: v3.1.0-refresh-2
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: "${{ inputs.service_name }}/Dockerfile"
+          dockerfile: ${{ inputs.service_name }}/Dockerfile
           failure-threshold: warning
 
       - name: Set up Java 21
