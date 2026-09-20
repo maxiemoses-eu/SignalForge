@@ -37,14 +37,14 @@ jobs:
       active_matrix: ${{ steps.compute_targets.outputs.active_matrix }}
     steps:
       - name: Hardened Repository Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
 
       - name: Evaluate Component Delta
         if: ${{ github.event_name != 'workflow_dispatch' }}
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v3.0.2
         with:
           filters: |
             gateway-microservice:
@@ -70,7 +70,9 @@ jobs:
               echo 'active_matrix=["${{ inputs.manual_service }}"]' >> $GITHUB_OUTPUT
             fi
           else
-            echo "active_matrix=${{ steps.filter.outputs.changes }}" >> $GITHUB_OUTPUT
+            # Convert space-separated string from paths-filter into a JSON array
+            CHANGES="${{ steps.filter.outputs.changes }}"
+            echo "active_matrix=$(echo $CHANGES | jq -R -s -c 'split(" ") | map(select(length > 0))')" >> $GITHUB_OUTPUT
           fi
 
   # Instead of using a matrix inside a reusable workflow (which causes the startup crash),

@@ -37,7 +37,7 @@ jobs:
       active_matrix: ${{ steps.compute_targets.outputs.active_matrix }}
     steps:
       - name: Hardened Repository Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
 
@@ -92,7 +92,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout GitOps Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           repository: maxiemoses-eu/SignalForge-ArgoCD
           token: ${{ secrets.GITOPS_PAT }}
