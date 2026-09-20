@@ -42,6 +42,7 @@ jobs:
           fi
 
       - name: Lint Dockerfile
+        # Cache-busting comment: v3.1.0-refresh
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ./${{ inputs.service_name }}/Dockerfile
