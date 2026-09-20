@@ -19,12 +19,12 @@ jobs:
 
     steps:
       - name: Hardened Repository Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
       - name: GitLeaks Secret Scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -42,7 +42,7 @@ jobs:
           fi
 
       - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@v3
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
         with:
           dockerfile: ./${{ inputs.service_name }}/Dockerfile
           failure-threshold: warning
@@ -101,13 +101,13 @@ jobs:
           esac
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f95db14fdd7910d21350268e4de0e75d5c2d66ee # v3.0.0
 
       - name: OIDC Identity Federated Login to Microsoft Azure
-        uses: azure/login@v2
+        uses: azure/login@6b245a7d50020d1e931d261be2450415307feed1 # v2.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -117,7 +117,7 @@ jobs:
         run: az acr login --name ${{ secrets.AZURE_REGISTRY_NAME }}
 
       - name: Build Local Container Layer
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@2cdde22fde133043114e72c1d5a6a018ac93433a # v5.3.0
         with:
           context: .
           file: ./${{ inputs.service_name }}/Dockerfile
@@ -128,7 +128,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
 
       - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400e26442d6d451fe4fad3a20 # v0.35.0 safe post-CVE-2026-33634
         with:
           scan-type: 'image'
           image-ref: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
@@ -139,7 +139,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Push Verified Image to ACR
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@2cdde22fde133043114e72c1d5a6a018ac93433a # v5.3.0
         with:
           context: .
           file: ./${{ inputs.service_name }}/Dockerfile
