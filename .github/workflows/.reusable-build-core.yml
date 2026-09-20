@@ -45,7 +45,7 @@ jobs:
         # Cache-busting comment: v3.1.0-refresh
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: ./${{ inputs.service_name }}/Dockerfile
+          dockerfile: "${{ inputs.service_name }}/Dockerfile"
           failure-threshold: warning
 
       - name: Set up Java 21
@@ -121,16 +121,16 @@ jobs:
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
           context: ./${{ inputs.service_name }}
-          file: ./${{ inputs.service_name }}/Dockerfile
+          file: ./Dockerfile
           load: true
           platforms: linux/amd64
           tags: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
           cache-from: type=gha,scope=${{ inputs.service_name }}
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
 
-      - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
-        with:
+          - name: Run Trivy Vulnerability Scanner
+          uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+          with:
           scan-type: 'image'
           image-ref: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
           format: 'table'
@@ -139,11 +139,11 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
-      - name: Push Verified Image to ACR
-        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
-        with:
+          - name: Push Verified Image to ACR
+          uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
+          with:
           context: ./${{ inputs.service_name }}
-          file: ./${{ inputs.service_name }}/Dockerfile
+          file: ./Dockerfile
           push: true
           platforms: linux/amd64
           tags: |

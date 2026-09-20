@@ -47,7 +47,7 @@ jobs:
         # Cache-busting comment: v3.1.0-refresh
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: ./${{ inputs.service_name }}/Dockerfile
+          dockerfile: "${{ inputs.service_name }}/Dockerfile"
           failure-threshold: warning
 
       - name: Set up Java 21
@@ -120,7 +120,7 @@ jobs:
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
           context: ./${{ inputs.service_name }}
-          file: ./${{ inputs.service_name }}/Dockerfile
+          file: ./Dockerfile
           load: true
           platforms: linux/amd64
           tags: ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
@@ -142,7 +142,7 @@ jobs:
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
           context: ./${{ inputs.service_name }}
-          file: ./${{ inputs.service_name }}/Dockerfile
+          file: ./Dockerfile
           push: true
           platforms: linux/amd64
           tags: |
