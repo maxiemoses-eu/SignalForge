@@ -95,6 +95,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set lowercase repository name
+        run: |
+          echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
@@ -102,5 +106,5 @@ jobs:
           file: ./${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/${{ matrix.service }}:uat
-            ghcr.io/${{ github.repository }}/${{ matrix.service }}:uat-${{ github.sha }}
+            ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:uat
+            ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:uat-${{ github.sha }}
