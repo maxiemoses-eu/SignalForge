@@ -20,12 +20,12 @@ jobs:
 
     steps:
       - name: Hardened Repository Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: GitLeaks Secret Scan
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -44,7 +44,7 @@ jobs:
           echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
       - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ./${{ inputs.service_name }}/Dockerfile
           failure-threshold: warning
@@ -116,7 +116,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Local Container Layer
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
           context: ./${{ inputs.service_name }}
           file: ./${{ inputs.service_name }}/Dockerfile
@@ -127,7 +127,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
 
       - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           scan-type: 'image'
           image-ref: ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
@@ -138,7 +138,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Push Verified Image to GHCR
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
           context: ./${{ inputs.service_name }}
           file: ./${{ inputs.service_name }}/Dockerfile
