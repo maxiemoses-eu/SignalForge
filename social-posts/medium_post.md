@@ -1,9 +1,17 @@
-Why we chose a three repository GitOps topology for SignalForge and how we navigated our first deployment hurdles
+Why we chose a three-repository GitOps topology for SignalForge and how we navigated our deployment hurdles
 
-When we sat down to design SignalForge, we knew we did not want a traditional monolithic structure or even a standard single repository microservices setup. We chose a three-repository topology, dividing our ecosystem into application source code, infrastructure as code using Terraform, and GitOps deployments managed by ArgoCD and Helm. This separation of concerns ensures that our application developers, platform engineers, and operations teams can work completely independently. Our microservices are built using a polyglot approach, matching each service to the most efficient language for its job—Nodejs, Go, Java, and Python running side by side.
+Designing SignalForge required a departure from monolithic conventions. We implemented a three-repository topology: application source code, infrastructure as code (Terraform), and GitOps deployments (ArgoCD/Helm). This modularity ensures functional autonomy across engineering teams, supported by a polyglot microservices stack including Node.js, Go, Java, and Python.
 
-With our services defined, we set out to build a security-first deployment pipeline using GitHub Actions. We integrated GitLeaks to scan for accidental secrets, Hadolint to check our Dockerfiles, and Trivy to scan final container layers for critical vulnerabilities. Our strategy has now evolved into a fully automated, hardened CI/CD pipeline where every build is validated before being pushed to GitHub Container Registry (GHCR).
+### The CI/CD Hardening Journey
 
-Early in the process, our attempts to push verified container images to GHCR were met with failure because the registry enforces strict lowercase naming rules for all repositories. We fixed this natively using simple bash parameter expansion in our runner, avoiding the need for bloated external actions. This kept our pipeline fast, clean, and completely native. 
+With the architectural foundation established, we prioritized a security-first deployment pipeline using GitHub Actions. We integrated GitLeaks, Hadolint, and Trivy to enforce stringent vulnerability and compliance checks. However, transitioning this pipeline from initial concept to a hardened production-ready state was an iterative process of log-driven troubleshooting.
 
-Now that our secure container builds are passing and pushing seamlessly to GHCR, we are shifting our focus to telemetry and observability. Every step of this journey has shown us that building a secure microservices ecosystem is less about avoiding errors and more about resolving them with simple, elegant engineering decisions.
+Our deployment logs revealed three critical infrastructure hurdles:
+
+1. **Registry Path Sensitivity**: Early pushes to GitHub Container Registry (GHCR) failed due to uppercase character restrictions in repository paths. We resolved this by injecting native bash parameter expansion to dynamically lowercase our repository variables, maintaining pipeline efficiency without external dependencies.
+2. **Action Resolution Stability**: Automated runner diagnostics highlighted failures in resolving specific action tags. We analyzed the logs, identified the source of the resolution failure, and reinforced pipeline stability by pinning all workflow actions to verified commit SHAs.
+3. **Build Context Misconfiguration**: During service builds, `npm ci` failures occurred despite the existence of `package-lock.json`. By interpreting build logs, we corrected the Docker build context pathing to ensure the build engine could accurately locate service-specific dependency manifest files.
+
+### Engineering Lessons
+
+By methodically analyzing CI logs, we successfully transitioned our strategy to a fully automated, hardened CI/CD pipeline targeting GHCR. This journey demonstrated that building a secure microservices ecosystem is not merely about avoiding errors; it is about cultivating the log-driven diagnostic expertise required to resolve complex infrastructure failures with precision. As secure container builds now pass seamlessly to GHCR, our focus shifts to observability and telemetry—the next phase in maturing our infrastructure.
