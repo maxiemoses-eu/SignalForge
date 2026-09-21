@@ -122,8 +122,8 @@ jobs:
       - name: Build Local Container Layer
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
-          context: .
-          file: ./${{ inputs.service_name }}/Dockerfile
+          context: ./${{ inputs.service_name }}
+          file: ./Dockerfile
           load: true
           platforms: linux/amd64
           tags: ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
@@ -144,8 +144,8 @@ jobs:
       - name: Push Verified Image to GHCR
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
-          context: .
-          file: ./${{ inputs.service_name }}/Dockerfile
+          context: ./${{ inputs.service_name }}
+          file: ./Dockerfile
           push: true
           platforms: linux/amd64
           tags: |
