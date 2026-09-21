@@ -74,11 +74,11 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 22
         if: ${{ inputs.service_name == 'product-microservice' || inputs.service_name == 'gateway-microservice' || inputs.service_name == 'store-ui' }}
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22
           cache: 'npm'
           cache-dependency-path: ${{ inputs.service_name }}/package-lock.json
 

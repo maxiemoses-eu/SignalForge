@@ -1,48 +1,13 @@
-# ==========================================
-# Stage 1: Build & Prune Dependencies
-# ==========================================
-FROM node:22-alpine3.21 AS builder
-
+FROM node:20-alpine AS build
 WORKDIR /app
-
-# Copy dependency manifests first for optimal layer caching
 COPY package*.json ./
-
-# Install all dependencies (including devDependencies if needed for build steps)
-RUN npm ci
-
-# Copy the rest of the application source code
+RUN npm ci --omit=dev
 COPY . .
 
-# Prune development dependencies to keep the production footprint small
-RUN npm prune --production
-
-# ==========================================
-# Stage 2: Production Runner
-# ==========================================
-FROM node:22-alpine3.21 AS runner
-
+FROM node:20-alpine
 WORKDIR /app
-
-# Upgrade Alpine OS packages to patch any base-image vulnerabilities
-RUN apk update && apk upgrade --no-cache
-
-# Copy pruned production node_modules and configuration from builder
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-
-# Copy application source files safely
-# (Adjust these based on your exact file structure, e.g., src/ or individual files)
-COPY --from=builder /app/server.js ./server.js
-COPY --from=builder /app/app.js ./app.js
-COPY --from=builder /app/index.js ./index.js
-
-# Ensure proper permissions for the non-root 'node' user
-RUN chown -R node:node /app
-
-# Switch to non-root user for security compliance
+COPY --from=build /app /app
+# npm is not needed at runtime; removing it removes its bundled tar
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 USER node
-
-EXPOSE 8080
-
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
