@@ -33,6 +33,9 @@ jobs:
   inspect_changes:
     name: Compute Change Delta
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       active_matrix: ${{ steps.compute_targets.outputs.active_matrix }}
     steps:
@@ -41,8 +44,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Skipped for manual runs and tag pushes (tags build everything).
       - name: Evaluate Component Delta
-        if: ${{ github.event_name != 'workflow_dispatch' }}
+        if: ${{ github.event_name != 'workflow_dispatch' && github.ref_type != 'tag' }}
         id: filter
         uses: dorny/paths-filter@v3.0.2
         with:
@@ -62,16 +66,28 @@ jobs:
 
       - name: Compute Execution Target Matrix Array
         id: compute_targets
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          MANUAL_SERVICE: ${{ inputs.manual_service }}
+          CHANGES: ${{ steps.filter.outputs.changes }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ inputs.manual_service }}" = "all" ]; then
-              echo 'active_matrix=["gateway-microservice", "order-microservice", "payment-microservice", "product-microservice", "store-ui", "user-microservice"]' >> $GITHUB_OUTPUT
+          ALL='["gateway-microservice","order-microservice","payment-microservice","product-microservice","store-ui","user-microservice"]'
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            if [ "${MANUAL_SERVICE}" = "all" ]; then
+              MATRIX="${ALL}"
             else
-              echo 'active_matrix=["${{ inputs.manual_service }}"]' >> $GITHUB_OUTPUT
+              MATRIX="[\"${MANUAL_SERVICE}\"]"
             fi
+          elif [ "${REF_TYPE}" = "tag" ]; then
+            MATRIX="${ALL}"
           else
-            echo "active_matrix=${{ steps.filter.outputs.changes }}" >> $GITHUB_OUTPUT
+            MATRIX="${CHANGES:-[]}"
           fi
+
+          echo "Active matrix: ${MATRIX}"
+          echo "active_matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
 
   build_and_secure:
     name: Secure Lifecycle — ${{ matrix.service }}
@@ -84,4 +100,4 @@ jobs:
     uses: ./.github/workflows/.reusable-build-core-ghcr.yml
     with:
       service_name: ${{ matrix.service }}
-    secrets: inherit # Required to pass secrets down to the reusable workflow
+    secrets: inherit

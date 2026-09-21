@@ -6,6 +6,19 @@ on:
       service_name:
         required: true
         type: string
+    secrets:
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_SUBSCRIPTION_ID:
+        required: false
+      AZURE_REGISTRY_NAME:
+        required: false
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
 
 jobs:
   execute_pipeline_core:
@@ -17,6 +30,10 @@ jobs:
       contents: read
       security-events: write
       packages: write
+    env:
+      # The `secrets` context is not allowed in step-level `if:`,
+      # so resolve it once here and check env.HAS_AZURE in steps.
+      HAS_AZURE: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_SUBSCRIPTION_ID != '' && secrets.AZURE_REGISTRY_NAME != '' }}
 
     steps:
       - name: Hardened Repository Checkout
@@ -55,6 +72,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: 'maven'
 
       - name: Set up Node.js 20
         if: ${{ inputs.service_name == 'product-microservice' || inputs.service_name == 'gateway-microservice' || inputs.service_name == 'store-ui' }}
@@ -65,34 +83,40 @@ jobs:
           cache-dependency-path: ${{ inputs.service_name }}/package-lock.json
 
       - name: Compile and Test
+        env:
+          SERVICE: ${{ inputs.service_name }}
         run: |
-          case "${{ inputs.service_name }}" in
+          case "${SERVICE}" in
             user-microservice)
-              cd ${{ inputs.service_name }}
+              cd "${SERVICE}"
               pip install --break-system-packages -r requirements.txt
-              pytest --tb=short || echo "No tests"
+              # Exit code 5 = no tests collected (allowed). Any other failure fails the job.
+              pytest --tb=short || [ $? -eq 5 ]
               ;;
             store-ui|product-microservice|gateway-microservice)
-              cd ${{ inputs.service_name }}
+              cd "${SERVICE}"
               npm ci && npm test
               ;;
             payment-microservice)
-              cd ${{ inputs.service_name }}
+              cd "${SERVICE}"
               go mod download && go build ./... && go test ./...
               ;;
             order-microservice)
-              cd ${{ inputs.service_name }}
+              cd "${SERVICE}"
               mvn verify --batch-mode --no-transfer-progress
               ;;
+            *)
+              echo "Unknown service: ${SERVICE}"
+              exit 1
+              ;;
           esac
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
+      # No registry logins on pull requests: they never push, and fork PRs can't authenticate.
       - name: Log in to GitHub Container Registry (GHCR)
+        if: ${{ github.event_name != 'pull_request' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -100,7 +124,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: OIDC Identity Federated Login to Microsoft Azure
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: ${{ env.HAS_AZURE == 'true' && github.event_name != 'pull_request' }}
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -108,8 +132,10 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Authenticate to Azure Container Registry
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
-        run: az acr login --name ${{ secrets.AZURE_REGISTRY_NAME }}
+        if: ${{ env.HAS_AZURE == 'true' && github.event_name != 'pull_request' }}
+        env:
+          AZURE_REGISTRY_NAME: ${{ secrets.AZURE_REGISTRY_NAME }}
+        run: az acr login --name "${AZURE_REGISTRY_NAME}"
 
       - name: Build Local Container Layer
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
@@ -132,24 +158,46 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
+      - name: Compute Image Tags
+        if: ${{ github.event_name != 'pull_request' }}
+        id: tags
+        env:
+          SERVICE: ${{ inputs.service_name }}
+          GH_SHA: ${{ github.sha }}
+          AZURE_REGISTRY_NAME: ${{ secrets.AZURE_REGISTRY_NAME }}
+        run: |
+          {
+            echo "list<<TAGS_EOF"
+            echo "ghcr.io/${REPO_LOWER}/${SERVICE}:${VERSION_TAG}"
+            echo "ghcr.io/${REPO_LOWER}/${SERVICE}:sha-${GH_SHA}"
+            if [ "${HAS_AZURE}" = "true" ]; then
+              echo "${AZURE_REGISTRY_NAME}.azurecr.io/${SERVICE}:${VERSION_TAG}"
+              echo "${AZURE_REGISTRY_NAME}.azurecr.io/${SERVICE}:sha-${GH_SHA}"
+            fi
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Push Verified Image to GHCR (and ACR if configured)
+        if: ${{ github.event_name != 'pull_request' }}
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
           context: ./${{ inputs.service_name }}
           file: ./${{ inputs.service_name }}/Dockerfile
           push: true
           platforms: linux/amd64
-          tags: |
-            ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
-            ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:sha-${{ github.sha }}
-            ${{ secrets.AZURE_CLIENT_ID != '' && format('{0}.azurecr.io/{1}:{2}', secrets.AZURE_REGISTRY_NAME, inputs.service_name, env.VERSION_TAG) \vert{}\vert{} '' }}${{ secrets.AZURE_CLIENT_ID != '' && format('{0}.azurecr.io/{1}:sha-{2}', secrets.AZURE_REGISTRY_NAME, inputs.service_name, github.sha) || '' }}
+          tags: ${{ steps.tags.outputs.list }}
           cache-from: type=gha,scope=${{ inputs.service_name }}
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
 
       - name: Notify on Failure
         if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SERVICE: ${{ inputs.service_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
-            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
             -d parse_mode=Markdown \
-            -d text="❌ *SignalForge Pipeline Failed*%0AService: *${{ inputs.service_name }}*%0ACommit: \`${{ github.sha }}\`%0A[View Failed Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            -d text="❌ *SignalForge Pipeline Failed*%0AService: *${SERVICE}*%0ACommit: \`${GITHUB_SHA}\`%0A[View Failed Run](${RUN_URL})"
