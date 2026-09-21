@@ -48,7 +48,7 @@ jobs:
 
       - name: Lint Dockerfile
         # Cache-busting comment: v3.1.0-refresh-2
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.10.0
         with:
           dockerfile: ${{ inputs.service_name }}/Dockerfile
           failure-threshold: warning
