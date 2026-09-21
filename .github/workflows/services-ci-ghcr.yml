@@ -70,11 +70,8 @@ jobs:
               echo 'active_matrix=["${{ inputs.manual_service }}"]' >> $GITHUB_OUTPUT
             fi
           else
-            # Convert space-separated string from paths-filter into a JSON array
-            CHANGES="${{ steps.filter.outputs.changes }}"
-            MATRIX=$(echo $CHANGES | jq -R -s -c 'split(" ") | map(select(length > 0))')
-            echo "Computed matrix: $MATRIX"
-            echo "active_matrix=$MATRIX" >> $GITHUB_OUTPUT
+            # Directly use the JSON output from paths-filter
+            echo "active_matrix=${{ steps.filter.outputs.changes }}" >> $GITHUB_OUTPUT
           fi
 
   # Instead of using a matrix inside a reusable workflow (which causes the startup crash),

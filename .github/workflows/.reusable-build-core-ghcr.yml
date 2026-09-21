@@ -19,9 +19,6 @@ jobs:
       packages: write
 
     steps:
-      - name: Debug Input Service Name
-        run: echo "The input service_name is '${{ inputs.service_name }}'"
-
       - name: Hardened Repository Checkout
         uses: actions/checkout@v4
         with:
