@@ -1,3 +1,9 @@
-Infrastructure hardening isn't a one-time setup; it’s an iterative process of log analysis and precise engineering. Our journey to secure SignalForge microservices involved diagnosing action resolution errors, rectifying Docker build context issues, and resolving registry path sensitivity.
+Hardening microservices isn't a one-time setup; it’s an iterative journey of log-driven engineering. 
 
-We’ve now finalized our automated, hardened CI/CD pipeline, enforcing GitLeaks and Trivy scanning on every build, and pushing images seamlessly to GitHub Container Registry (GHCR). Secure-by-design is our workflow. #SignalForge #DevSecOps #LogAnalysis
+We stabilized our CI/CD pipeline (resolving GHCR case-sensitivity, pinned SHAs, and build contexts), and then pushed further: 
+
+🎯 ZERO vulnerability milestone reached across all polyglot services (Node, Go, Java, Python) verified by Trivy scans!
+🐳 Hardened non-root containers using Hadolint standards.
+📝 Enforced continuous compliance via central Security Hardening registries.
+
+Secure-by-design is now our automated workflow. #SignalForge #DevSecOps #LogAnalysis #CloudNative
