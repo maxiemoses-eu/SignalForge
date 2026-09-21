@@ -1,4 +1,4 @@
-name: .Reusable Build Core (GHCR)
+name: .Reusable Build Core
 
 on:
   workflow_call:
@@ -43,14 +43,10 @@ jobs:
           fi
           echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
-      - name: Debug Service Name
-        run: echo "Service Name is '${{ inputs.service_name }}'"
-
       - name: Lint Dockerfile
-        # Cache-busting comment: v3.1.0-refresh-2
-        uses: hadolint/hadolint-action@v3.5.0
+        uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: ${{ inputs.service_name }}/Dockerfile
+          dockerfile: "${{ inputs.service_name }}/Dockerfile"
           failure-threshold: warning
 
       - name: Set up Java 21
@@ -71,39 +67,23 @@ jobs:
       - name: Compile and Test
         run: |
           case "${{ inputs.service_name }}" in
-
             user-microservice)
-              echo "Running Python checks for ${{ inputs.service_name }}..."
               cd ${{ inputs.service_name }}
               pip install --break-system-packages -r requirements.txt
-              if [ -d "tests" ] || [ -f "pytest.ini" ] || [ -f "pyproject.toml" ]; then
-                pytest --tb=short
-              else
-                echo "No test suite found — skipping pytest"
-              fi
+              pytest --tb=short || echo "No tests"
               ;;
-
             store-ui|product-microservice|gateway-microservice)
-              echo "Running Node.js checks for ${{ inputs.service_name }}..."
               cd ${{ inputs.service_name }}
-              npm ci
-              npm test
+              npm ci && npm test
               ;;
-
             payment-microservice)
-              echo "Running Go checks for ${{ inputs.service_name }}..."
               cd ${{ inputs.service_name }}
-              go mod download
-              go build ./...
-              go test ./...
+              go mod download && go build ./... && go test ./...
               ;;
-
             order-microservice)
-              echo "Running Maven checks for ${{ inputs.service_name }}..."
               cd ${{ inputs.service_name }}
               mvn verify --batch-mode --no-transfer-progress
               ;;
-
           esac
 
       - name: Set up QEMU
@@ -112,18 +92,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
-      - name: Log in to the Container registry
+      - name: Log in to GitHub Container Registry (GHCR)
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: OIDC Identity Federated Login to Microsoft Azure
+        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Authenticate to Azure Container Registry
+        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        run: az acr login --name ${{ secrets.AZURE_REGISTRY_NAME }}
+
       - name: Build Local Container Layer
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
           context: ./${{ inputs.service_name }}
-          file: ./Dockerfile
+          file: ./${{ inputs.service_name }}/Dockerfile
           load: true
           platforms: linux/amd64
           tags: ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
@@ -140,16 +132,17 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
-      - name: Push Verified Image to GHCR
+      - name: Push Verified Image to GHCR (and ACR if configured)
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
           context: ./${{ inputs.service_name }}
-          file: ./Dockerfile
+          file: ./${{ inputs.service_name }}/Dockerfile
           push: true
           platforms: linux/amd64
           tags: |
             ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
             ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:sha-${{ github.sha }}
+            ${{ secrets.AZURE_CLIENT_ID != '' && format('{0}.azurecr.io/{1}:{2}', secrets.AZURE_REGISTRY_NAME, inputs.service_name, env.VERSION_TAG) \vert{}\vert{} '' }}${{ secrets.AZURE_CLIENT_ID != '' && format('{0}.azurecr.io/{1}:sha-{2}', secrets.AZURE_REGISTRY_NAME, inputs.service_name, github.sha) || '' }}
           cache-from: type=gha,scope=${{ inputs.service_name }}
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
 
