@@ -92,7 +92,7 @@ jobs:
   build_and_secure:
     name: Secure Lifecycle — ${{ matrix.service }}
     needs: inspect_changes
-    if: ${{ needs.inspect_changes.outputs.active_matrix != '[]' && needs.inspect_changes.outputs.active_matrix != '' }}
+    if: "${{ needs.inspect_changes.outputs.active_matrix != '[]' && needs.inspect_changes.outputs.active_matrix != '' }}"
     strategy:
       fail-fast: false
       matrix:
