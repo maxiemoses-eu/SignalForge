@@ -129,7 +129,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ inputs.service_name }}
 
       - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@062d8e158d3ae32d324b89617300c144e0586e3f # v0.53.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: 'image'
           image-ref: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
