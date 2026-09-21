@@ -1,9 +1,9 @@
 Hardening microservices isn't a one-time setup; it’s an iterative journey of log-driven engineering. 
 
-We stabilized our CI/CD pipeline (resolving GHCR case-sensitivity, pinned SHAs, and build contexts), and then pushed further: 
+We've now baked in proactive maintenance to our pipeline. Beyond fixing infrastructure hurdles (GHCR, SHAs), we now automatically audit and patch base images for Node, Go, Java, and Python to ensure our Trivy scanners never blink.
 
-🎯 ZERO vulnerability milestone reached across all polyglot services (Node, Go, Java, Python) verified by Trivy scans!
-🐳 Hardened non-root containers using Hadolint standards.
+🎯 ZERO vulnerability milestone maintained.
+🐳 Hardened non-root containers using Hadolint.
 📝 Enforced continuous compliance via central Security Hardening registries.
 
-Secure-by-design is now our automated workflow. #SignalForge #DevSecOps #LogAnalysis #CloudNative
+Secure-by-design is our automated workflow. #SignalForge #DevSecOps #LogAnalysis #CloudNative

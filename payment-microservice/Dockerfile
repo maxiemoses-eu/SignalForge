@@ -1,5 +1,5 @@
 # Changed from 1.22 to 1.23 to match go.mod requirements
-FROM golang:1.23-alpine AS build
+FROM golang:1.23.6-alpine3.21 AS build
 WORKDIR /app
 
 # Copy dependency files first to leverage Docker layer caching

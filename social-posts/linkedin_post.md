@@ -11,4 +11,7 @@ However, stabilizing our pipeline was only the beginning. With our GitLeaks, Had
 🐳 **Container Hardening (Hadolint Verified):** Restructured all service Dockerfiles to enforce non-root execution (e.g., `USER node`/`USER appuser`), utilize hardened minimal base images (Alpine/Slim), and perform OS-level security updates.
 📄 **Documentation-as-Code:** Adopted a central audit framework (`SECURITY_HARDENING.md`) linked directly to our Git history, making security verification an absolute prerequisite for any new Pull Request.
 
+**Update: Proactive Security Maintenance**
+Security isn't a "set and forget" task. Our latest engineering sprint focused on proactively maintaining our container posture. As vulnerability databases evolve, we've systematically audited and upgraded the base images for all our microservices to the latest stable, patched versions (Node.js, Java Temurin, Golang, and Python). This ensures our CI/CD pipeline—guarded by Trivy—remains robust, passing all vulnerability gates with flying colors. It’s a constant refinement process, but essential for staying ahead in secure cloud-native development.
+
 We have now finalized our CI/CD strategy by establishing GitHub Container Registry (GHCR) as the primary, hardened destination for our secure images. These challenges reinforced a key architectural lesson: secure microservices ecosystems are built not just by writing code, but by meticulously analyzing system diagnostics and making precise, elegant engineering corrections. #DevSecOps #SecOps #CICD #SignalForge #SoftwareEngineering #CloudNative

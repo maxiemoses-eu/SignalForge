@@ -1,10 +1,10 @@
-FROM node:22-alpine AS build
+FROM node:22.14.0-alpine3.21 AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
 
-FROM node:22-alpine
+FROM node:22.14.0-alpine3.21
 WORKDIR /app
 COPY --from=build /app /app
 # npm is not needed at runtime; removing it removes its bundled tar

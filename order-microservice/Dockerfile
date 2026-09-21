@@ -1,5 +1,5 @@
 # Use a Maven image to build the application
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9.9-eclipse-temurin-21 AS build
 WORKDIR /app
 
 # Copy only the pom.xml first to download dependencies
@@ -12,7 +12,7 @@ COPY src ./src
 RUN mvn package -DskipTests
 
 # Use a smaller JRE image for the final container
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21.0.6_7-jre-alpine
 WORKDIR /app
 
 # Add a non-root user
