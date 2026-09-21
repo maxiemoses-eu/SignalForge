@@ -70,12 +70,9 @@ jobs:
               echo 'active_matrix=["${{ inputs.manual_service }}"]' >> $GITHUB_OUTPUT
             fi
           else
-            # Directly use the JSON output from paths-filter
             echo "active_matrix=${{ steps.filter.outputs.changes }}" >> $GITHUB_OUTPUT
           fi
 
-  # Instead of using a matrix inside a reusable workflow (which causes the startup crash),
-  # we run a standard matrix job that runs a local build and push sequence.
   build_and_secure:
     name: Secure Lifecycle — ${{ matrix.service }}
     needs: inspect_changes
@@ -87,4 +84,4 @@ jobs:
     uses: ./.github/workflows/.reusable-build-core-ghcr.yml
     with:
       service_name: ${{ matrix.service }}
-    secrets: inherit
+    secrets: inherit # Required to pass secrets down to the reusable workflow
