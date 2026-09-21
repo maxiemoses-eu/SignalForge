@@ -128,16 +128,18 @@ jobs:
           platforms: linux/amd64
           tags: ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
           cache-from: type=gha,scope=${{ inputs.service_name }}
-          - name: Run Trivy Vulnerability Scanner
-            uses: aquasecurity/trivy-action@062d8e158d3ae32d324b89617300c144e0586e3f # v0.53.0
-            with:
-              scan-type: 'image'
-              image-ref: ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
-              format: 'table'
-              exit-code: '1'
-              ignore-unfixed: true
-              vuln-type: 'os,library'
-              severity: 'CRITICAL,HIGH'
+
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@062d8e158d3ae32d324b89617300c144e0586e3f # v0.53.0
+        with:
+          scan-type: 'image'
+          image-ref: ghcr.io/${{ env.REPO_LOWER }}/${{ inputs.service_name }}:${{ env.VERSION_TAG }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
       - name: Push Verified Image to GHCR
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
