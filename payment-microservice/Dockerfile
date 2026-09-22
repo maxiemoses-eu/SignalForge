@@ -12,7 +12,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 # Final stage: hardened but debuggable runtime environment
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian12@sha256:d13e3130d22d2f7048701980894564c67d32c4883f36a54165507850550c6670
 COPY --from=build /app/main /main
 EXPOSE 5003
 USER nonroot:nonroot

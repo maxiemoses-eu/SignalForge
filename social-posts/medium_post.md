@@ -12,8 +12,11 @@ Our deployment logs revealed three critical infrastructure hurdles:
 2. **Action Resolution Stability**: Automated runner diagnostics highlighted failures in resolving specific action tags. We analyzed the logs, identified the source of the resolution failure, and reinforced pipeline stability by pinning all workflow actions to verified commit SHAs.
 3. **Build Context Misconfiguration**: During service builds, `npm ci` failures occurred despite the existence of `package-lock.json`. By interpreting build logs, we corrected the Docker build context pathing to ensure the build engine could accurately locate service-specific dependency manifest files.
 
-**Proactive Container Maintenance**
-Even with a hardened foundation, security is an ongoing commitment, not a static state. As vulnerability databases update, our automated Trivy gates occasionally flag new issues in our base images. To address this, we recently completed a security maintenance sprint, systematically auditing and upgrading the base images for all microservices (Node.js, Java Temurin, Golang, Python) to their latest stable, patched versions. This proactive approach ensures our CI/CD pipeline remains robust and compliant without manual intervention for known vulnerabilities.
+**Proactive Container Maintenance & OS Patching**
+Even with a hardened foundation, security is an ongoing commitment. As vulnerability databases update, our automated Trivy gates occasionally flag new issues in our OS base images. To address this, we recently completed a comprehensive security maintenance sprint:
+* **Base Image Upgrades**: Audited and upgraded base images for Node.js, Java Temurin, Golang, and Python to their latest stable, patched versions.
+* **Automated OS Patching**: For our Alpine-based containers, we implemented automated `apk update && apk upgrade` steps within the build process to force the remediation of OS-level packages (like `musl`, `zlib`, and `libcrypto3`) immediately before deployment.
+This proactive, multi-layered approach ensures our CI/CD pipeline remains robust and compliant without constant manual intervention for known vulnerabilities.
 
 ### Achieving the Zero-Vulnerability Milestone
 

@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM node:22.14.0-alpine3.213.21 AS builder
+FROM node:22.14.0-alpine3.21 AS builder
 WORKDIR /app
 COPY package*.json ./
 # Clean install including dev deps for testing
@@ -9,7 +9,7 @@ COPY . .
 RUN npm prune --production
 
 # Stage 2: Production (Hardened)
-FROM node:22.14.0-alpine3.213.21
+FROM node:22.14.0-alpine3.21
 WORKDIR /app
 # Fix for common Alpine/Busybox CVEs
 RUN apk update && apk upgrade --no-cache
