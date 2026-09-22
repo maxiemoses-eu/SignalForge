@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install git for fetching dependencies and security tools
 RUN apk add --no-cache \
-    git=2.47.3-r0 \
+    git=2.54.0-r0 \
     ca-certificates=20260909-r0
 
 # Copy dependency files first to leverage Docker layer caching
