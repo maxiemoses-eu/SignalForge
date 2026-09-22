@@ -9,5 +9,7 @@ WORKDIR /app
 COPY --from=build /app /app
 # npm is not needed at runtime; removing it removes its bundled tar
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+# Patch base image to reduce Trivy findings
+RUN apk update && apk upgrade --no-cache
 USER node
 CMD ["node", "index.js"]
