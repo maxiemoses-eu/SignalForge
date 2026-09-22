@@ -1,11 +1,10 @@
+cat > payment-microservice/Dockerfile << 'EOF'
 # Build stage: matches go.mod requirement (go 1.25.0)
 FROM golang:1.25.0-alpine3.21 AS build
 WORKDIR /app
 
 # Install git for fetching dependencies and security tools
-RUN apk add --no-cache \
-    git=2.47.2-r0 \
-    ca-certificates=20241121-r1
+RUN apk add --no-cache git ca-certificates
 
 # Copy dependency files first to leverage Docker layer caching
 COPY go.mod go.sum ./
@@ -34,3 +33,4 @@ EXPOSE 5003
 
 # Run as nonroot user (distroless default), no shell fallback
 ENTRYPOINT ["/main"]
+EOF
