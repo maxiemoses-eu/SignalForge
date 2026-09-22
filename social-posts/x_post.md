@@ -1,7 +1,7 @@
 Hardening microservices isn't a one-time setup; it’s an iterative journey of log-driven engineering. 
 
 CI/CD maintenance sprint complete:
-✅ Node 22.x & Go 1.25 migrations.
+✅ Node 22.x & Go 1.26.6 migrations.
 ✅ Automated OS-level patching (`apk upgrade`).
 ✅ Pragmatic linter strategies for robust builds.
 

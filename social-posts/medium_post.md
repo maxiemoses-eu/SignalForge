@@ -14,7 +14,7 @@ Our deployment logs revealed three critical infrastructure hurdles:
 
 **Proactive Container Maintenance & CI/CD Lifecycle**
 Security isn't a "set and forget" task. As vulnerability databases update and runtime environments evolve (such as the deprecation of Node 20), our automated gates occasionally flag new issues. To address this, we completed a comprehensive security and lifecycle maintenance sprint:
-* **Lifecycle Management**: Proactively migrated all services to updated runtimes (e.g., Node 22.x, Go 1.25.0) to maintain compatibility and security support.
+* **Lifecycle Management**: Proactively migrated all services to updated runtimes (e.g., Node 22.x, Go 1.26.6) to maintain compatibility and security support.
 * **Automated OS Patching**: For our Alpine-based containers, we implemented automated `apk update && apk upgrade` steps within the build process to force the remediation of OS-level packages immediately before deployment.
 * **Linter Strategy**: To balance stringent linting rules (like DL3018) with operational stability, we chose to bypass redundant pinning for highly volatile Alpine packages, relying instead on automated `apk upgrade` to ensure we always pull the latest patches.
 

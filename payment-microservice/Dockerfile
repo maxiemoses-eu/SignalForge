@@ -1,5 +1,5 @@
-# Changed from 1.22 to 1.23 to 1.25 to match go.mod requirements
-FROM golang:1.25.0-alpine3.21 AS build
+# Changed from 1.22 to 1.23 to 1.25 to 1.26 to match go.mod requirements
+FROM golang:1.26.6-alpine3.21 AS build
 WORKDIR /app
 
 # Install git for fetching dependencies
