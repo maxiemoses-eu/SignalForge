@@ -3,8 +3,7 @@ FROM golang:1.25.0-alpine3.21 AS build
 WORKDIR /app
 
 # Install git for fetching dependencies
-# hadolint ignore=DL3018
-RUN apk add --no-cache git ca-certificates
+RUN apk add --no-cache git=2.47.2-r0 ca-certificates=20241121-r1
 
 # Copy dependency files first to leverage Docker layer caching
 COPY go.mod go.sum ./
