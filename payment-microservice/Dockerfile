@@ -1,5 +1,5 @@
 # Build stage: matches go.mod requirement (go 1.25.0)
-FROM golang:1.25.7-alpine3.21 AS build
+FROM golang:1.25.13-alpine AS build
 WORKDIR /app
 
 # Install git for fetching dependencies and security tools
