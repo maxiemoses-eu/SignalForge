@@ -2,6 +2,9 @@
 FROM golang:1.23.6-alpine3.21 AS build
 WORKDIR /app
 
+# Install git for fetching dependencies
+RUN apk add --no-cache git ca-certificates
+
 # Copy dependency files first to leverage Docker layer caching
 COPY go.mod go.sum ./
 RUN go mod download
