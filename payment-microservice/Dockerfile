@@ -1,4 +1,3 @@
-cat > payment-microservice/Dockerfile << 'EOF'
 # Build stage: matches go.mod requirement (go 1.25.0)
 FROM golang:1.25.0-alpine3.21 AS build
 WORKDIR /app
@@ -33,4 +32,3 @@ EXPOSE 5003
 
 # Run as nonroot user (distroless default), no shell fallback
 ENTRYPOINT ["/main"]
-EOF
