@@ -1,22 +1,36 @@
-# Changed from 1.22 to 1.23 to 1.25 to 1.26 to match go.mod requirements
-FROM golang:1.26.6-alpine3.21 AS build
+# Build stage: matches go.mod requirement (go 1.25.0)
+FROM golang:1.25.0-alpine3.21 AS build
 WORKDIR /app
 
-# Install git for fetching dependencies
-RUN apk add --no-cache git=2.47.2-r0 ca-certificates=20241121-r1
+# Install git for fetching dependencies and security tools
+RUN apk add --no-cache \
+    git=2.47.2-r0 \
+    ca-certificates=20241121-r1
 
 # Copy dependency files first to leverage Docker layer caching
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy source code
 COPY . .
 
-# Build static binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+# Build static binary with CGO disabled for maximum portability
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo \
+    -ldflags="-s -w" \
+    -o main .
 
-# Final stage: hardened but debuggable runtime environment
+# Final stage: hardened, minimal runtime environment
+# distroless is security-first: no shell, no package manager, no bloat
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /app/main /main
+WORKDIR /
+
+# Copy only the compiled binary from build stage
+COPY --from=build --chown=nonroot:nonroot /app/main /main
+
+# Copy CA certificates for HTTPS calls
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
 EXPOSE 5003
-USER nonroot:nonroot
+
+# Run as nonroot user (distroless default), no shell fallback
 ENTRYPOINT ["/main"]
