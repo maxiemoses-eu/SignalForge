@@ -1,0 +1,10 @@
+.git
+.github
+bin/
+dist/
+tmp/
+*.test
+*.out
+.idea/
+.vscode/
+.env
