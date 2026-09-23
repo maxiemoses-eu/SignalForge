@@ -59,12 +59,3 @@ Thumbs.db
 # =========================
 .trivy/
 .npm/
-payment-microservice/payment
-payment-microservice/payment
-payment-microservice/payment
-payment-microservice/payment
-payment-microservice/payment
-<<<<<<< HEAD
-=======
-payment-microservice/payment
->>>>>>> 69faa257 (Update payment Dockerfile to Go 1.25.0 and add binary to .gitignore)
