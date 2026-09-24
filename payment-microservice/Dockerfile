@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.6
-FROM golang:1.22.8-alpine3.20 AS build
+FROM golang:1.26.8-alpine3.24 AS build
 WORKDIR /src
 # hadolint ignore=DL3008,DL3018
 RUN apk add --no-cache ca-certificates git
