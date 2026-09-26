@@ -1,0 +1,20 @@
+{
+  "name": "store-ui",
+  "version": "1.0.0",
+  "description": "Store UI microservice (Express 5, Node 24 LTS)",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "5.2.1",
+    "helmet": "8.3.0"
+  }
+}

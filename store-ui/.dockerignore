@@ -1,5 +1,13 @@
-__pycache__/
-*.pyc
-.pytest_cache/
-venv/
+node_modules
+npm-debug.log*
+.git
+.github
+.gitignore
+.gitleaks.toml
 .env
+.env.*
+coverage
+test
+Dockerfile
+.dockerignore
+*.md
