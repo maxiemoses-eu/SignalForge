@@ -198,7 +198,7 @@ jobs:
           git config --global user.email "bot@signalforge.internal"
 
           # Clone the ACTUAL GitOps repo
-          git clone https://x-access-token:${GITOPS_TOKEN}@github.com/maxiemoses-eu/SignalForge-ArgoCD.git gitops-repo
+          git clone https://x-access-token:${GITOPS_TOKEN}@github.com/maxiemoses-eu/SignalForge-ArgoCD-2-.git gitops-repo
           cd gitops-repo
 
           # Your structure is helm-values/<service>.yaml per README
