@@ -87,7 +87,7 @@ jobs:
           SERVICE: ${{ inputs.service_name }}
         run: |
           case "${SERVICE}" in
-            user-microservice|sore-ui|product-microservice|gateway-microservice)
+            user-microservice|store-ui|product-microservice|gateway-microservice)
               cd "${SERVICE}"
               npm ci && npm test
               ;;
