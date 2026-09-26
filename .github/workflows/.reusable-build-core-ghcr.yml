@@ -87,13 +87,7 @@ jobs:
           SERVICE: ${{ inputs.service_name }}
         run: |
           case "${SERVICE}" in
-            user-microservice)
-              cd "${SERVICE}"
-              pip install --break-system-packages -r requirements.txt
-              # Exit code 5 = no tests collected (allowed). Any other failure fails the job.
-              pytest --tb=short || [ $? -eq 5 ]
-              ;;
-            store-ui|product-microservice|gateway-microservice)
+            user-microservice|sore-ui|product-microservice|gateway-microservice)
               cd "${SERVICE}"
               npm ci && npm test
               ;;
