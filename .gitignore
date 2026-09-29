@@ -59,3 +59,4 @@ Thumbs.db
 # =========================
 .trivy/
 .npm/
+GEMINI.md
