@@ -254,17 +254,6 @@ Planned extensions:
 * Auth service integration with HttpOnly cookies
 * Rate-limit and abuse detection signals
 
----
-
-## 📌 Disclaimer
-
-
-* Architecture demonstrations
-* Security engineering practice
-* CI/CD and detection pipeline experiments
-
-It is **not a complete commercial storefront**, but a **realistic, production-grade foundation**.
-
 
 
 
