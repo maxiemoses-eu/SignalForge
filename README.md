@@ -1,75 +1,111 @@
-# SignalForge: Security as a code project
+# SignalForge: DevSecOps & Security Engineering Project
+
+SignalForge is a portfolio DevSecOps platform built around **containerized microservices, Microsoft Azure, Kubernetes, Terraform, GitHub Actions, and ArgoCD**.
+
+The project demonstrates how application delivery, infrastructure provisioning, security controls, and GitOps deployment can be separated into three repositories while working together as one platform.
+
+### What this project demonstrates
+
+* Containerized microservices
+* CI/CD with GitHub Actions
+* Infrastructure as Code with Terraform
+* Azure Kubernetes Service (AKS)
+* Azure Container Registry (ACR)
+* GitOps with ArgoCD
+* Helm-based Kubernetes deployments
+* Container security scanning with Trivy
+* OIDC-based GitHub Actions authentication
+* Non-root containers and minimal base images
+* Application and infrastructure observability
+* Cloud cost-aware architecture decisions
 
 ---
 
-## 🛠️ Summary
+## 🔗 Project Repositories
 
-SignalForge is a portfolio DevSecOps platform built around containerized microservices, Azure Kubernetes Service, Terraform, GitHub Actions, and ArgoCD. The project focuses on secure CI/CD, infrastructure automation, GitOps delivery, observability, and cloud cost-aware architecture.
-**3-Repository Enterprise Topology** (App, IaC, and GitOps) deployed on **Microsoft Azure (AKS/ACR)**. The delivery infrastructure is engineered to solve real-world cloud scaling, and security bottlenecks. This project is designed to **generate high-fidelity security and operational signals** for detection engineering.
+SignalForge is intentionally separated into three repositories:
 
-## Project Repo Structure
+| Repository                                                                            | Purpose                                                     |
+| ------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| **[SignalForge](https://github.com/maxiemoses-eu/SignalForge)**                       | Application code, microservices, frontend, Docker and CI/CD |
+| **[SignalForge-AzureInfra](https://github.com/maxiemoses-eu/SignalForge-AzureInfra)** | Azure infrastructure and Terraform                          |
+| **[SignalForge-ArgoCD-2](https://github.com/maxiemoses-eu/SignalForge-ArgoCD-2)**     | Kubernetes, Helm and ArgoCD GitOps configuration            |
+
+**Application → Infrastructure → GitOps**
+
+The three repositories are designed to work together rather than represent three separate projects.
+
+---
+
+## 🏗️ Architecture
 
 ```mermaid
 flowchart TB
 
     APP["Application Repository<br/>Microservices & Frontend"]
+
     IAC["Infrastructure Repository<br/>Terraform Modules"]
-    GITOPS["GitOps Repository<br/>Helm Charts / Kustomize<br/>Kubernetes Manifests"]
+
+    GITOPS["GitOps Repository<br/>Helm Charts / Kubernetes Manifests"]
 
     ACR["Azure Container Registry (ACR)"]
 
     AKS["Azure Kubernetes Service (AKS)"]
 
-    APP -->|"CI Pipeline<br/>Tests, Security Scans,<br/>Build & Push Docker Image"| ACR
+    APP -->|"CI Pipeline<br/>Tests, Security Scans,<br/>Build & Push"| ACR
 
-    IAC -->|"Terraform Apply<br/>Infrastructure Provisioning"| AKS
+    IAC -->|"Terraform<br/>Infrastructure Provisioning"| AKS
 
-    ACR -->|"Pull Container Images"| AKS
+    ACR -->|"Container Images"| AKS
 
-    GITOPS -->|"GitOps Synchronization<br/>Desired State Reconciliation"| AKS
-
-    classDef app fill:#E3F2FD,stroke:#1565C0,stroke-width:2px;
-    classDef iac fill:#FFEBEE,stroke:#C62828,stroke-width:2px;
-    classDef registry fill:#FFF3E0,stroke:#EF6C00,stroke-width:2px;
-    classDef platform fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px;
-    classDef gitops fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px;
-
-    class APP app;
-    class IAC iac;
-    class ACR registry;
-    class AKS platform;
-    class GITOPS gitops;
+    GITOPS -->|"GitOps Synchronization<br/>Desired-State Reconciliation"| AKS
 ```
 
-Each service:
+### Repository responsibilities
 
-* Is independently deployable
-* Is containerized
-* Runs as non-root
-* Uses minimal base images
-* Is designed to pass **Trivy scans**
-* Emits signals suitable for **SignalForge ingestion**
+**Application Repository**
+
+Contains the frontend and backend microservices, Dockerfiles, tests, CI workflows, and application-level security controls.
+
+**Infrastructure Repository**
+
+Contains Terraform configuration for the Azure infrastructure supporting the platform.
+
+**GitOps Repository**
+
+Contains the Kubernetes deployment configuration used by ArgoCD to maintain the desired state of the application on AKS.
 
 ---
 
-## 📊 Business & Infrastructure Metrics
+# 📊 Engineering Focus
 
-| Engineering Focus | The Legacy Problem | My Hardened Solution | Business Impact |
-| :--- | :--- | :--- | :--- |
-| **Cloud Cost (FinOps)** | Typos or single-service edits trigger redundant builds across all 6 microservices ("Ghost Runs"). | **Dynamic Path-Filtering Gates** compute exact code deltas to target micro-matrix threads. | **80% reduction** in GitHub Actions runner billing minutes. |
-| **Identity & Access** | Hardcoded Azure Service Principal Client Secrets stored in repository configurations. | **Workload Identity Federation (OIDC)** using ephemeral JSON Web Tokens. | **Zero Static Secrets.** Completely immunizes pipeline against credential leaks. |
-| **Supply Chain** | Vulnerable base images or rogue container injections bypassing registry verification layers. | **Shift-Left Trivy Diagnostics** + Cryptographic **SBOM / Provenance Attestations**. | **Zero-Trust Validation.** AKS admission controllers reject unsigned container injections. |
+| Engineering Area        | Challenge                                                                    | Approach                                                          |
+| ----------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **CI/CD & Cost**        | Unnecessary workflows can consume additional CI runner time                  | Path-based workflow filtering targets builds to relevant changes  |
+| **Identity & Access**   | Long-lived cloud credentials increase credential-management risk             | GitHub Actions uses Azure OIDC / Workload Identity Federation     |
+| **Container Security**  | Vulnerable images can reach later stages of delivery                         | Trivy scanning is integrated into the development and CI workflow |
+| **Infrastructure**      | Manually provisioned cloud resources are difficult to reproduce consistently | Terraform manages Azure infrastructure as code                    |
+| **Deployment**          | Manual Kubernetes deployments can create configuration drift                 | ArgoCD continuously reconciles the desired GitOps state           |
+| **Container Hardening** | Unnecessary privileges increase container attack surface                     | Services use non-root containers and minimal base images          |
 
-👉 *For the deep-dive technical diagrams, OIDC token exchange breakdown, and configuration mechanics, see the [Advanced Workflow Security Documentation](.github/workflows/README.md).*
+For the detailed workflow security implementation, see:
 
-## 🔧 Tech Stack
+**[Advanced Workflow Security Documentation](.github/workflows/README.md)**
 
-### Frontend (UI)
+---
+
+# 🧩 Application Architecture
+
+SignalForge uses multiple services implemented with different technologies to demonstrate a distributed application environment.
+
+### Frontend
 
 * React
-* Axios (centralized API client)
-* Jest + React Testing Library
-* nginx (static serving, hardened config)
+* Axios
+* Jest
+* React Testing Library
+* nginx
+* Hardened nginx configuration
 
 ### Backend
 
@@ -80,39 +116,70 @@ Each service:
 | Orders          | Java     | Spring Boot |
 | Payments        | Go       | Gin         |
 
-### Security & Ops
+Each service is independently containerized and can be built and tested separately.
 
-* Docker (multi-stage builds)
+---
+
+# 🔐 Security & Container Hardening
+
+The project applies security controls at multiple stages of the delivery process.
+
+### Container-level controls
+
 * Non-root containers
-* Minimal Alpine / Slim images
-* Telemetry hooks for logs & errors
-* CI-friendly testing
+* Multi-stage Docker builds
+* Minimal Alpine / Slim base images
+* Pinned dependencies
+* Reduced unnecessary OS packages
+* Trivy vulnerability scanning
+* No hardcoded application credentials
+
+### CI/CD security
+
+GitHub Actions uses **OIDC-based authentication** for Azure rather than relying on long-lived Azure client secrets stored in repository configuration.
+
+This reduces the need for persistent cloud credentials in CI.
+
+### Supply-chain security
+
+The project incorporates security scanning and artifact validation into the delivery workflow, with the broader architecture designed around reducing the opportunity for untrusted container artifacts to reach the cluster.
 
 ---
 
-## 🎯 Design Goals
+# 📈 Observability & Signal Generation
 
-### Customer-Facing
+SignalForge is also designed as a platform for generating application and operational signals.
 
-* Browse products
-* Add to cart
-* Checkout securely
-* Clear loading and error states
+The application can produce:
 
-### Security / DevOps-Facing
+* API success/failure events
+* Frontend errors
+* Checkout failures
+* Structured backend logs
+* Telemetry events
+* Potential abuse-pattern signals
 
-* Centralized error handling
-* Structured UI telemetry
-* Observable API interactions
-* Easy extension into SOC dashboards
+Telemetry is handled through:
 
-> **The UI is a signal generator, not just a shop front.**
+* Axios interceptors in the UI
+* Structured backend logging
+* `/telemetry` application endpoint
+
+These signals provide a foundation for future:
+
+* Detection engineering
+* Fraud-analysis exercises
+* Incident-response simulations
+* Blue-team training
+* SOC dashboard development
+
+> **The application is designed to be both a functional microservices platform and a source of security and operational signals.**
 
 ---
 
-## 📁 Project Structure
+# 📁 Project Structure
 
-```
+```text
 .
 ├── ui/
 │   ├── src/
@@ -142,19 +209,19 @@ Each service:
 
 ---
 
-## 🚀 Getting Started
+# 🚀 Getting Started
 
-### Prerequisites
+## Prerequisites
 
 * Docker
-* Node.js 20+ (for local UI dev)
-* Java 21 (for local order service dev)
+* Node.js 20+
+* Java 21
 * Go 1.22+
 * Python 3.11+
 
 ---
 
-## 🧪 Running Tests
+# 🧪 Testing
 
 ### UI Tests
 
@@ -166,12 +233,13 @@ npm test
 
 ### Backend Tests
 
-Each service includes basic unit tests.
-Run them individually inside each service directory.
+Each backend service contains its own tests.
+
+Run the tests from the individual service directory.
 
 ---
 
-## 🐳 Building Containers
+# 🐳 Building Containers
 
 ### UI
 
@@ -190,7 +258,9 @@ docker build -t payment-service ./payment-service
 
 ---
 
-## 🔍 Security Scanning (Trivy)
+# 🔍 Security Scanning
+
+Images can be scanned locally with Trivy:
 
 ```bash
 trivy image signalforge-ui
@@ -200,61 +270,114 @@ trivy image order-service
 trivy image payment-service
 ```
 
-**Design choices to reduce findings:**
+### Container security principles
 
-* No hardcoded secrets
-* Non-root containers
+* Non-root execution
 * Minimal base images
 * Pinned dependencies
-* No unnecessary OS packages
+* Reduced OS packages
+* Vulnerability scanning
+* No unnecessary credentials inside images
 
 ---
 
-## 📊 Telemetry & SignalForge
+# ☁️ Azure Infrastructure
 
-The UI and services are designed to emit:
+The Azure environment is managed separately through Terraform.
 
-* API success/failure events
-* Frontend errors
-* Checkout failures
-* Abuse patterns (future extension)
+**Infrastructure repository:**
 
-Telemetry is centralized via:
+**[SignalForge-AzureInfra](https://github.com/maxiemoses-eu/SignalForge-AzureInfra)**
 
-* Axios interceptors (UI)
-* Structured logs (backend)
-* `/telemetry` endpoint (UI → SignalForge)
+The infrastructure repository covers the Azure resources required by the platform, including:
 
-This enables:
+* Azure Kubernetes Service
+* Azure Container Registry
+* Virtual Network and subnets
+* Key Vault
+* PostgreSQL
+* Log Analytics
+* Identity and access configuration
+* GitHub Actions OIDC integration
 
-* Detection engineering
-* Fraud analysis
-* Incident response simulations
-* Blue team training environments
-
----
-
-## 🧠 Key Engineering Principles
-
-* **Separation of concerns** (UI ≠ API ≠ telemetry)
-* **Fail loudly, fail safely**
-* **Everything observable**
-* **Security by default**
-* **Minimal attack surface**
+Infrastructure decisions are documented in the IaC repository, including cost considerations and the trade-offs made for a portfolio environment.
 
 ---
 
-## 🛣️ Roadmap
+# 🔄 GitOps Deployment
 
-Planned extensions:
+Kubernetes deployment configuration is maintained separately from the application and infrastructure repositories.
 
-* Admin / SOC dashboard
+**GitOps repository:**
+
+**[SignalForge-ArgoCD-2](https://github.com/maxiemoses-eu/SignalForge-ArgoCD-2)**
+
+The repository contains the Kubernetes deployment configuration used by the GitOps workflow, including:
+
+* ArgoCD configuration
+* Helm charts
+* Helm values
+* Kubernetes manifests
+* Security configuration
+
+ArgoCD is responsible for reconciling the desired configuration stored in Git with the deployed application state in Kubernetes.
+
+---
+
+# 🧠 Key Engineering Principles
+
+* **Separation of concerns** — application, infrastructure and deployment configuration are maintained independently
+* **Infrastructure as Code** — cloud infrastructure is reproducible through Terraform
+* **GitOps** — Kubernetes desired state is maintained in Git
+* **Security by default** — security controls are introduced throughout the delivery process
+* **Least privilege** — authentication and access are designed around minimizing unnecessary permissions
+* **Observability** — applications should expose useful operational signals
+* **Minimal attack surface** — containers avoid unnecessary packages and privileges
+* **Cost awareness** — architecture decisions consider the cost of running cloud infrastructure
+
+---
+
+# 🛣️ Roadmap
+
+Planned extensions include:
+
 * OpenTelemetry instrumentation
-* Feature flags for incident response
-* WAF-aware UI patterns
-* Auth service integration with HttpOnly cookies
-* Rate-limit and abuse detection signals
+* Admin / SOC dashboard
+* Feature flags for incident-response exercises
+* WAF-aware application patterns
+* Auth-service integration using HttpOnly cookies
+* Rate limiting
+* Abuse-detection signals
+* Expanded security-event visualization
 
+---
 
+## 🔗 Related Repositories
 
+### Application
 
+**[SignalForge](https://github.com/maxiemoses-eu/SignalForge)**
+
+Application code, microservices, frontend, Docker and CI/CD.
+
+### Infrastructure
+
+**[SignalForge-AzureInfra](https://github.com/maxiemoses-eu/SignalForge-AzureInfra)**
+
+Terraform-managed Azure infrastructure.
+
+### GitOps
+
+**[SignalForge-ArgoCD-2](https://github.com/maxiemoses-eu/SignalForge-ArgoCD-2)**
+
+Kubernetes, Helm and ArgoCD deployment configuration.
+
+---
+
+## Project Summary
+
+SignalForge brings together **application development, cloud infrastructure, CI/CD, container security and GitOps** into a single portfolio project.
+
+The project is structured to demonstrate not only the individual tools, but how they work together across the software delivery lifecycle:
+
+**Code → Test → Scan → Build → Registry → Infrastructure → Kubernetes → GitOps → Observability**
