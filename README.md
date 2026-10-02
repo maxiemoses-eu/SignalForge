@@ -2,9 +2,10 @@
 
 ---
 
-## 🛠️ Enterprise DevSecOps & FinOps Summary
+## 🛠️ Summary
 
-This project is a production-ready, security-hardened platform built with multiple microservices, and telemetry-first design principles. This project is built using a **3-Repository Enterprise Topology** (App, IaC, and GitOps) deployed on **Microsoft Azure (AKS/ACR)**. The delivery infrastructure is engineered to solve real-world cloud scaling, cost, and security bottlenecks. This project is designed to **generate high-fidelity security and operational signals** for detection engineering and SOC workflows.
+SignalForge is a portfolio DevSecOps platform built around containerized microservices, Azure Kubernetes Service, Terraform, GitHub Actions, and ArgoCD. The project focuses on secure CI/CD, infrastructure automation, GitOps delivery, observability, and cloud cost-aware architecture.
+**3-Repository Enterprise Topology** (App, IaC, and GitOps) deployed on **Microsoft Azure (AKS/ACR)**. The delivery infrastructure is engineered to solve real-world cloud scaling, cost, and security bottlenecks. This project is designed to **generate high-fidelity security and operational signals** for detection engineering and SOC workflows.
 
 ## Project Repo Structure
 
